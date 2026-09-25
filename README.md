@@ -9,6 +9,9 @@ You can switch between RGB and monochrome cameras (Day and Night vision 😎).
 
 [![Install with FrameDrop](images/framedrop-button.svg)](https://framedropvr.com/install?manifest=https%3A%2F%2Fgithub.com%2FKominoVR%2Fframe-passthrough-shortcuts%2Freleases%2Flatest%2Fdownload%2Fframe-passthrough-shortcuts.framedrop.json)
 
+After installing, launch **Frame Passthrough Shortcuts** once from
+**Library → Non-Steam** on the headset to enable SteamVR autostart.
+
 Download the [Linux ARM64 package](https://github.com/KominoVR/frame-passthrough-shortcuts/releases/download/v0.1.0/frame-passthrough-shortcuts-0.1.0-linux-arm64.zip) if you prefer to install manually.
 
 ## Controls
