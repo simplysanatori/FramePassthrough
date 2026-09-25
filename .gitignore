@@ -1,0 +1,4 @@
+/build*/
+/dist/
+/.zig-cache/
+*.log

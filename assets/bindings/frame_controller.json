@@ -1,0 +1,44 @@
+{
+  "action_manifest_version": 1,
+  "alias_info": {},
+  "app_key": "local.frame.passthrough.shortcuts",
+  "bindings": {
+    "/actions/shortcuts": {
+      "chords": [],
+      "haptics": [],
+      "poses": [],
+      "skeleton": [],
+      "sources": [
+        {
+          "path": "/user/hand/left/input/thumbstick",
+          "mode": "button",
+          "parameters": {
+            "double_press_delay": 0.25,
+            "long_press_delay": 1.0
+          },
+          "inputs": {
+            "double": { "output": "/actions/shortcuts/in/toggle_style" },
+            "long": { "output": "/actions/shortcuts/in/toggle_rgb" }
+          }
+        },
+        {
+          "path": "/user/hand/right/input/thumbstick",
+          "mode": "button",
+          "parameters": {
+            "double_press_delay": 0.25,
+            "long_press_delay": 1.0
+          },
+          "inputs": {
+            "double": { "output": "/actions/shortcuts/in/toggle_style" },
+            "long": { "output": "/actions/shortcuts/in/toggle_rgb" }
+          }
+        }
+      ]
+    }
+  },
+  "controller_type": "frame_controller",
+  "description": "Either thumbstick: double press toggles translucent/opaque; hold for one second toggles RGB/monochrome.",
+  "name": "Frame Passthrough Shortcuts - thumbstick gestures",
+  "options": {},
+  "simulated_actions": []
+}

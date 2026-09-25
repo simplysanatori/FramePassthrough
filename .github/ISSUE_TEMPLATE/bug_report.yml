@@ -1,0 +1,30 @@
+name: Bug report
+description: Report a problem with passthrough shortcuts.
+title: "[Bug] "
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What happened?
+      description: Include what you expected and how to reproduce the problem.
+    validations:
+      required: true
+  - type: input
+    id: versions
+    attributes:
+      label: Versions
+      description: App version, SteamOS version, and SteamVR version.
+    validations:
+      required: true
+  - type: dropdown
+    id: camera
+    attributes:
+      label: Arcturus RGB camera
+      options:
+        - Connected
+        - Not connected
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional details
+      description: Include custom bindings or relevant log excerpts. Remove personal information.

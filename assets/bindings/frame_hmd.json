@@ -1,0 +1,19 @@
+{
+  "action_manifest_version": 1,
+  "alias_info": {},
+  "app_key": "local.frame.passthrough.shortcuts",
+  "bindings": {
+    "/actions/shortcuts": {
+      "chords": [],
+      "haptics": [],
+      "poses": [],
+      "skeleton": [],
+      "sources": []
+    }
+  },
+  "controller_type": "frame_hmd",
+  "description": "No headset buttons assigned; use your configured controller shortcuts.",
+  "name": "Frame headset — unassigned",
+  "options": {},
+  "simulated_actions": []
+}
