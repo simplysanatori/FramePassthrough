@@ -7,6 +7,8 @@ and opaque passthrough, which only shows your surroundings.
 It works with the Arcturus RGB camera! 
 You can switch between RGB and monochrome cameras (Day and Night vision 😎).
 
+[Watch the showcase on X](https://x.com/_komino/status/2103490940476309863?s=20).
+
 [![Install with FrameDrop](images/framedrop-button.svg)](https://framedropvr.com/install?manifest=https%3A%2F%2Fgithub.com%2FKominoVR%2Fframe-passthrough-shortcuts%2Freleases%2Flatest%2Fdownload%2Fframe-passthrough-shortcuts.framedrop.json)
 
 After installing, launch **Frame Passthrough Shortcuts** once from
