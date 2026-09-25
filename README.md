@@ -1,11 +1,6 @@
 # Frame Passthrough Shortcuts
 
-Change Steam Frame passthrough modes from your controllers. Switch between
-translucent passthrough, which shows your surroundings alongside immersive VR content,
-and opaque passthrough, which only shows your surroundings.
-
-It works with the Arcturus RGB camera! 
-You can switch between RGB and monochrome cameras (Day and Night vision 😎).
+Change Steam Frame passthrough modes from your controllers. Switch between translucent passthrough, which shows your surroundings alongside immersive VR content, and opaque passthrough, which only shows your surroundings. If you have the Arcturus RGB camera, you can also switch between its RGB view and the Frame’s built-in monochrome cameras (day and night vision 😎).
 
 [Watch the showcase on X](https://x.com/_komino/status/2103490940476309863?s=20).
 
