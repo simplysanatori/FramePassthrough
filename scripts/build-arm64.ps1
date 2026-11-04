@@ -13,7 +13,7 @@ try {
     $env:ZIG_GLOBAL_CACHE_DIR = Join-Path $build 'zig-global-cache'
     $env:ZIG_LOCAL_CACHE_DIR = Join-Path $build 'zig-local-cache'
     $sources = @(
-        'src/main.cpp', 'src/config.cpp', 'src/controller.cpp', 'src/openvr_camera_source.cpp',
+        'src/main.cpp', 'src/config.cpp', 'src/controller.cpp',
         'third_party/openvr/src/openvr_api_public.cpp',
         'third_party/openvr/src/jsoncpp.cpp',
         'third_party/openvr/src/vrcore/dirtools_public.cpp',

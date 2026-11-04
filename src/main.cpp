@@ -1,6 +1,5 @@
 #include "config.hpp"
 #include "controller.hpp"
-#include "openvr_camera_source.hpp"
 #include <openvr.h>
 #include <json.hpp>
 #include <algorithm>
@@ -165,34 +164,13 @@ void register_app(const fs::path& binary, const fs::path& assets, const fs::path
     check_input(vr::VRInput()->SetActionManifestPath((assets / "actions.json").u8string().c_str()), "Load actions");
 }
 
-constexpr std::array<const char*, 6> action_names = {"toggle_style", "translucent", "opaque", "toggle_rgb", "rgb", "monochrome"};
-constexpr std::array<fps::Action, 6> action_kinds = {fps::Action::ToggleStyle, fps::Action::Translucent, fps::Action::Opaque,
-    fps::Action::ToggleRgb, fps::Action::Rgb, fps::Action::Monochrome};
+constexpr std::array<const char*, 3> action_names = {"toggle_style", "translucent", "opaque"};
+constexpr std::array<fps::Action, 3> action_kinds = {fps::Action::ToggleStyle, fps::Action::Translucent, fps::Action::Opaque};
 
 fps::Action parse_action(std::string name) {
     for (auto& c : name) if (c == '-') c = '_';
     for (size_t i = 0; i < action_names.size(); ++i) if (name == action_names[i]) return action_kinds[i];
     throw std::runtime_error("Unknown action: " + name);
-}
-
-void load_camera_preference(fps::Controller& controls) {
-    const auto path = app_directory() / "camera-preference.json";
-    if (!fs::exists(path)) return;
-    try {
-        std::ifstream stream(path);
-        json saved;
-        if (!(stream >> saved) || !saved.at("rgb").is_boolean()) throw std::runtime_error("expected Boolean rgb");
-        controls.remember_rgb(saved.at("rgb").get<bool>());
-    } catch (const std::exception& error) {
-        log(std::string("Cannot load saved camera preference: ") + error.what());
-    }
-}
-
-void save_camera_preference(const fps::Controller& controls) {
-    if (!controls.preferred_rgb()) return;
-    const auto temporary = app_directory() / "camera-preference.pending.json";
-    write_file(temporary, json{{"rgb", *controls.preferred_rgb()}}.dump());
-    fs::rename(temporary, app_directory() / "camera-preference.json");
 }
 
 int run(const fs::path& binary, const fs::path& assets, const fs::path& config_path, const fps::Config& config, bool bindings) {
@@ -201,33 +179,21 @@ int run(const fs::path& binary, const fs::path& assets, const fs::path& config_p
     VrSession session(!bindings, false, true);
     register_app(binary, assets, config_path);
     VrSettings settings;
-    fps::OpenVrCameraSource camera;
-    fps::Controller controls(settings, config, &camera);
-    load_camera_preference(controls);
+    fps::Controller controls(settings, config);
     vr::VRActionSetHandle_t action_set = vr::k_ulInvalidActionSetHandle;
     check_input(vr::VRInput()->GetActionSetHandle("/actions/shortcuts", &action_set), "Find action set");
     if (bindings) {
         check_input(vr::VRInput()->OpenBindingUI(app_key, action_set, vr::k_ulInvalidInputValueHandle, false), "Open bindings");
         return 0;
     }
-    std::array<vr::VRActionHandle_t, 6> handles{};
-    std::array<fps::PressGate, 6> gates;
+    std::array<vr::VRActionHandle_t, action_names.size()> handles{};
+    std::array<fps::PressGate, action_names.size()> gates;
     for (size_t i = 0; i < handles.size(); ++i) {
         const auto path = std::string("/actions/shortcuts/in/") + action_names[i];
         check_input(vr::VRInput()->GetActionHandle(path.c_str(), &handles[i]), "Find action");
         gates[i] = fps::PressGate(config.debounce_ms);
     }
     const auto pid = vr::VRApplications()->GetApplicationProcessId(app_key);
-    if (!config.rgb.enabled) log("RGB / monochrome switching is disabled in configuration.");
-    else if (config.rgb.backend == "steamvr_camera") {
-        try {
-            const auto current = camera.read();
-            if (current[0] != 1) throw std::runtime_error("camera rendering is not initialized yet");
-            log(std::string("Steam Frame camera source control ready: ") + (current[2] ? "RGB" : "monochrome"));
-        } catch (const std::exception& error) {
-            log(std::string("Camera source control is not ready: ") + error.what() + ". Actions will retry.");
-        }
-    }
     vr::VRActiveActionSet_t active{};
     active.ulActionSet = action_set;
     active.nPriority = vr::k_nActionSetOverlayGlobalPriorityMax;
@@ -236,7 +202,6 @@ int run(const fs::path& binary, const fs::path& assets, const fs::path& config_p
     log("Ready as VRApplication_Overlay. No overlay surface is created or rendered.");
     log("Overlay input priority configured; SteamVR dashboard focus can still block actions.");
     bool warned_inactive = false;
-    std::string camera_error;
     std::string input_error;
     json last_status;
     const auto started = std::chrono::steady_clock::now();
@@ -267,13 +232,6 @@ int run(const fs::path& binary, const fs::path& assets, const fs::path& config_p
             }
         } else {
             removal_seen = std::chrono::steady_clock::time_point{};
-        }
-        try {
-            if (controls.reconcile_camera_source()) log("Updated camera source for camera availability and saved preference.");
-            camera_error.clear();
-        } catch (const std::exception& error) {
-            if (camera_error != error.what()) log(std::string("Camera restoration deferred: ") + error.what());
-            camera_error = error.what();
         }
         const auto update_error = vr::VRInput()->UpdateActionState(&active, sizeof(active), 1);
         if (update_error != vr::VRInputError_None) {
@@ -307,20 +265,13 @@ int run(const fs::path& binary, const fs::path& assets, const fs::path& config_p
             if (data.bActive && data.bState && data.bChanged)
                 log(std::string("Input press: ") + action_names[i]);
             if (gates[i].update(data.bActive, data.bState, data.bChanged, ms)) {
-                try { log(controls.apply(action_kinds[i])); save_camera_preference(controls); }
+                try { log(controls.apply(action_kinds[i])); }
                 catch (const std::exception& e) { log(std::string("Action failed: ") + e.what()); }
             }
         }
         if (!read_failed) input_error.clear();
         json status{{"pid", pid}, {"ready", true}, {"input_active", input_active},
             {"dashboard_visible", vr::VROverlay()->IsDashboardVisible()}, {"input_priority", active.nPriority}};
-        try { status["arcturus_rgb_camera_connected"] = camera.rgb_available(); }
-        catch (const std::exception& error) {
-            status["arcturus_rgb_camera_connected"] = nullptr;
-            if (camera_error != error.what()) log(std::string("Camera detection deferred: ") + error.what());
-            camera_error = error.what();
-        }
-        if (controls.preferred_rgb()) status["preferred_rgb"] = *controls.preferred_rgb();
         if (status != last_status) {
             log(std::string("Input state: ") + status.dump());
             write_file(app_directory() / "runtime.json", status.dump()); last_status = std::move(status);
@@ -512,8 +463,8 @@ void verify_control_companion(const fs::path& binary, const fs::path& helper) {
 }
 
 void help() {
-    log("Frame Passthrough Shortcuts 0.1.0\n"
-        "Creates no overlay. Supports Steam Frame RGB / monochrome camera selection.\n\n"
+    log("Frame Passthrough Shortcuts 0.1.1\n"
+        "Creates no overlay surface. Switches translucent / opaque passthrough.\n\n"
         "Default: Register and start SteamVR autolaunch.\n"
         "  --run                 Run an overlay application without creating an overlay surface\n"
         "  --install             Enable SteamVR autostart and launch shortcuts\n"
@@ -523,7 +474,7 @@ void help() {
         "  --doctor              Read runtime settings and report support; no setting changes\n"
         "  --self-test           Test style changes, then restore the original style\n"
         "  --bindings            Open bindings (use --stop first)\n"
-        "  --action NAME         toggle-style, translucent, opaque, toggle-rgb, rgb, monochrome\n"
+        "  --action NAME         toggle-style, translucent, opaque\n"
         "  --validate            Check config and bundled action manifest without SteamVR\n"
         "  --config PATH         Use this JSON config (default: config.json beside executable)\n"
         "  --help                Show this help");
@@ -601,11 +552,6 @@ int main(int argc, char** argv) {
             if (!config_path.is_absolute()) throw std::runtime_error("Saved launch configuration must use an absolute path");
         }
         auto config = fps::load_config(config_path);
-        // Camera selection is automatic on Frame, including older config files.
-        config.rgb.enabled = true;
-        config.rgb.backend = "steamvr_camera";
-        config.rgb.section.clear();
-        config.rgb.key.clear();
         std::ifstream manifest_stream(assets / "actions.json");
         json manifest;
         if (!manifest_stream || !(manifest_stream >> manifest) || !manifest.contains("actions"))
@@ -617,9 +563,6 @@ int main(int argc, char** argv) {
                 if (!stream || !(stream >> value) || !value.contains("bindings")) throw std::runtime_error("Missing or invalid default binding");
             }
             log("Configuration and action files are valid.");
-            if (config.rgb.enabled && config.rgb.backend == "steamvr_camera")
-                log("Steam Frame RGB / monochrome backend configured; run --doctor on the Frame to check support.");
-            else log(config.rgb.enabled ? "RGB backend configured; hardware behavior is unverified." : "RGB switching disabled: no verified Arcturus RGB camera selector configured.");
             return 0;
         }
         if (command == "--install") {
@@ -647,30 +590,15 @@ int main(int argc, char** argv) {
             InstanceLock lock;
             VrSession session(false);
             VrSettings settings;
-            fps::OpenVrCameraSource camera;
             if (command == "--action") {
-                fps::Controller controls(settings, config, &camera);
-                load_camera_preference(controls);
+                fps::Controller controls(settings, config);
                 log(controls.apply(parse_action(action)));
-                save_camera_preference(controls);
                 return 0;
             }
             log("Connected as VRApplication_Background. No overlay created.");
             const auto style = settings.read("camera", "roomViewStyle", int32_t(0));
             log("camera.roomViewStyle=" + std::to_string(std::get<int32_t>(style)) + " (3=translucent, 4=opaque)");
             log("camera.roomView=" + std::to_string(std::get<int32_t>(settings.read("camera", "roomView", int32_t(0)))));
-            if (config.rgb.enabled && config.rgb.backend == "steamvr_camera") {
-                const auto current = camera.read();
-                if (current[0] != 1) throw std::runtime_error("Steam Frame camera rendering is not initialized; open passthrough and retry");
-                log(std::string("Steam Frame camera source: ") + (current[2] ? "RGB" : "monochrome"));
-                log("Camera flags: stereo=" + std::to_string(current[1]) + ", disable_devignetting=" +
-                    std::to_string(current[3]) + ", sharpening=" + std::to_string(current[4]));
-            } else if (config.rgb.enabled) {
-                const auto current = settings.read(config.rgb.section, config.rgb.key, config.rgb.rgb_value);
-                if (current != config.rgb.rgb_value && current != config.rgb.monochrome_value)
-                    throw std::runtime_error("Configured RGB setting has an unknown value; source switching is unavailable");
-                log(current == config.rgb.rgb_value ? "Configured RGB source setting: RGB" : "Configured RGB source setting: monochrome");
-            } else log("RGB / monochrome: UNSUPPORTED until a verified source selector is configured.");
             return 0;
         }
         return run(binary, assets, config_path, config, command == "--bindings");

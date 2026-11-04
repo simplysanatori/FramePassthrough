@@ -1,0 +1,10 @@
+{
+  "owner": "KominoVR",
+  "name": "frame-passthrough-shortcuts",
+  "description": "Controller shortcuts for translucent and opaque passthrough on Steam Frame.",
+  "topics": ["steam-frame", "steamvr", "passthrough", "vr", "openvr", "linux-arm64"],
+  "license": "MIT",
+  "version": "0.1.1",
+  "releaseTitle": "Frame Passthrough Shortcuts 0.1.1",
+  "branch": "main"
+}

@@ -1,22 +1,44 @@
+**Colour/black-and-white passthrough switching has been removed. Use the [official Arcturus camera control application](https://store.steampowered.com/app/4103250/Arcturus_Vision_Camera/) instead.**
+
 # Frame Passthrough Shortcuts
 
-Change Steam Frame passthrough modes from your controllers. Switch between translucent passthrough, which shows your surroundings alongside immersive VR content, and opaque passthrough, which only shows your surroundings. If you have the Arcturus RGB camera, you can also switch between its RGB view and the Frame’s built-in monochrome cameras (day and night vision 😎).
+Change Steam Frame passthrough modes from your controllers. Switch between
+translucent passthrough, which shows your surroundings alongside immersive VR content,
+and opaque passthrough, which only shows your surroundings.
 
 [Watch the showcase on X](https://x.com/_komino/status/2103490940476309863?s=20).
 
-[![Install with FrameDrop](images/framedrop-button.svg)](https://framedropvr.com/install?manifest=https%3A%2F%2Fgithub.com%2FKominoVR%2Fframe-passthrough-shortcuts%2Freleases%2Flatest%2Fdownload%2Fframe-passthrough-shortcuts.framedrop.json)
+<br>
+<br>
 
-After installing, launch **Frame Passthrough Shortcuts** once from
+<a href="https://framedropvr.com/install?manifest=https%3A%2F%2Fgithub.com%2FKominoVR%2Fframe-passthrough-shortcuts%2Freleases%2Flatest%2Fdownload%2Fframe-passthrough-shortcuts.framedrop.json" style="display:inline-flex;align-items:center;gap:10px;padding:8px 14px 8px 10px;color:#e6b54a;background:#080809;border:1px solid #e6b54a;text-decoration:none;font:600 13px/1.2 'JetBrains Mono', ui-monospace, monospace;letter-spacing:0.06em;text-transform:uppercase;">
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="24 11 40 40" width="28" height="28" fill="none" aria-hidden="true">
+    <path d="M58 23V48H26V42" stroke="#e6b54a" stroke-width="2.5" stroke-linejoin="miter"/>
+    <path d="M56 16H41" stroke="#c41e3a" stroke-width="2.5"/>
+    <path d="M41 16H26V20" stroke="#cb3c3d" stroke-width="2.5" stroke-linejoin="miter"/>
+    <path d="M26 20V26" stroke="#d25d41" stroke-width="2.5"/>
+    <path d="M26 26V32" stroke="#d97c44" stroke-width="2.5"/>
+    <path d="M26 32V37" stroke="#df9747" stroke-width="2.5"/>
+    <path d="M26 37V42" stroke="#e3a949" stroke-width="2.5"/>
+    <rect x="55" y="13" width="6" height="6" fill="#c41e3a"/>
+  </svg>
+  Install with FrameDrop
+</a>
+
+After installing with FrameDrop, launch **Frame Passthrough Shortcuts** once from
 **Library → Non-Steam** on the headset to enable SteamVR autostart.
 
-Download the [Linux ARM64 package](https://github.com/KominoVR/frame-passthrough-shortcuts/releases/download/v0.1.0/frame-passthrough-shortcuts-0.1.0-linux-arm64.zip) if you prefer to install manually.
+Download the [Linux ARM64 package](https://github.com/KominoVR/frame-passthrough-shortcuts/releases/download/v0.1.1/frame-passthrough-shortcuts-0.1.1-linux-arm64.zip) if you prefer to install manually.
 
-## Controls
+[View the GitHub repository](https://github.com/KominoVR/frame-passthrough-shortcuts).
+
+<br>
+
+# Controls
 
 | Gesture on either thumbstick | Action |
 | --- | --- |
 | Double-press | Toggle translucent / opaque passthrough |
-| Hold for one second | Toggle Arcturus RGB camera / built-in monochrome cameras |
 
 **These only work with the SteamVR dashboard closed!**
 
@@ -24,25 +46,23 @@ Download the [Linux ARM64 package](https://github.com/KominoVR/frame-passthrough
 the headset side button or the Steam button on either controller)**
 
 All actions can be changed in **SteamVR controller bindings → Frame Passthrough
-Shortcuts**, including separate translucent, opaque, RGB, and monochrome
-actions.
+Shortcuts**, including separate translucent and opaque actions.
 
-## Compatibility
+<br>
+
+# Compatibility
 
 - Runs locally on Steam Frame.
-- Arcturus RGB camera is optional.
 - Shortcuts require the SteamVR dashboard to be closed.
-- Selecting monochrome only changes the camera source; it does not power
-  off the Arcturus RGB camera.
-- Camera switching uses SteamVR’s internal camera controls. Updates may affect
-  compatibility. (Please report any issues)
 
-## Manual installation
+<br>
+
+# Manual installation
 
 Copy the Linux ARM64 ZIP to the Frame, connect over SSH, and run:
 
 ```sh
-unzip -oq ~/frame-passthrough-shortcuts-0.1.0-linux-arm64.zip -d ~/devkit-game/Frame_Passthrough_Shortcuts
+unzip -oq ~/frame-passthrough-shortcuts-0.1.1-linux-arm64.zip -d ~/devkit-game/Frame_Passthrough_Shortcuts
 ~/devkit-game/Frame_Passthrough_Shortcuts/frame-passthrough-shortcuts --install
 ```
 
@@ -53,7 +73,9 @@ remove the registration, package files, bindings, and app settings:
 ~/devkit-game/Frame_Passthrough_Shortcuts/frame-passthrough-shortcuts --uninstall
 ```
 
-## Build
+<br>
+
+# Build
 
 On Linux ARM64, with CMake and a C++17 compiler installed:
 

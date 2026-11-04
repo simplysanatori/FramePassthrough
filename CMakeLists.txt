@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(FramePassthroughShortcuts VERSION 0.1.0 LANGUAGES CXX)
+project(FramePassthroughShortcuts VERSION 0.1.1 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -20,7 +20,7 @@ endif()
 include(cmake/OpenVRLoader.cmake)
 find_package(Threads REQUIRED)
 
-add_library(fps_core STATIC src/config.cpp src/controller.cpp src/openvr_camera_source.cpp)
+add_library(fps_core STATIC src/config.cpp src/controller.cpp)
 target_include_directories(fps_core PUBLIC src third_party/json)
 target_link_libraries(fps_core PUBLIC openvr_loader Threads::Threads)
 target_compile_definitions(fps_core PUBLIC FPS_VERSION="${PROJECT_VERSION}")

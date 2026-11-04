@@ -16,13 +16,6 @@ body:
       description: App version, SteamOS version, and SteamVR version.
     validations:
       required: true
-  - type: dropdown
-    id: camera
-    attributes:
-      label: Arcturus RGB camera
-      options:
-        - Connected
-        - Not connected
   - type: textarea
     id: additional
     attributes:

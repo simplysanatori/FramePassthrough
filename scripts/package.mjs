@@ -108,8 +108,8 @@ function collectFiles(directory, prefix, entries) {
 
 export function packageRelease(options) {
   const root = path.resolve(options.root ?? projectRoot);
-  const version = options.version ?? '0.1.0';
-  if (!/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(version)) throw new Error('Version must be semver, e.g. 0.1.0');
+  const version = options.version ?? '0.1.1';
+  if (!/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(version)) throw new Error('Version must be semver, e.g. 0.1.1');
   const platform = options.platform ?? 'linux-arm64';
   const binaryName = appName;
   const binaryPath = path.resolve(options.buildDir ?? path.join(root, 'build'), 'bin', binaryName);
@@ -132,7 +132,7 @@ export function packageRelease(options) {
     JSON.parse(fs.readFileSync(path.join(root, 'assets', filename), 'utf8'));
   }
   collectFiles(path.join(root, 'assets'), '', entries);
-  for (const filename of ['README.md', 'LICENSE', 'third_party/openvr/LICENSE', 'third_party/json/LICENSE.MIT']) {
+  for (const filename of ['README.md', 'CHANGELOG.md', 'RELEASE_NOTES.md', 'LICENSE', 'third_party/openvr/LICENSE', 'third_party/json/LICENSE.MIT']) {
     entries.push({ name: filename, data: fs.readFileSync(path.join(root, filename)), mode: 0o644 });
   }
   for (const filename of ['THIRD_PARTY_NOTICES.md', 'images/framedrop-button.svg']) {
@@ -183,7 +183,7 @@ function latestManifestUrl(base, manifestName) {
 
 function main(args) {
   if (args.includes('--help')) {
-    console.log('node scripts/package.mjs --build-dir build --version 0.1.0 --platform linux-arm64 [--output-dir dist] [--base-url https://host/releases/v0.1.0/] [--file-url https://host/download/frame-passthrough-shortcuts-0.1.0-linux-arm64.zip] [--install-manifest-url https://host/releases/latest/download/frame-passthrough-shortcuts.framedrop.json]');
+    console.log('node scripts/package.mjs --build-dir build --version 0.1.1 --platform linux-arm64 [--output-dir dist] [--base-url https://host/releases/v0.1.1/] [--file-url https://host/download/frame-passthrough-shortcuts-0.1.1-linux-arm64.zip] [--install-manifest-url https://host/releases/latest/download/frame-passthrough-shortcuts.framedrop.json]');
     return;
   }
   const mapping = { '--build-dir': 'buildDir', '--version': 'version', '--platform': 'platform', '--output-dir': 'outputDir', '--base-url': 'baseUrl', '--file-url': 'fileUrl', '--install-manifest-url': 'installManifestUrl' };

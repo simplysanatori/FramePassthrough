@@ -21,8 +21,8 @@ Value read_typed(Settings& settings, const std::string& section, const std::stri
 
 } // namespace
 
-Controller::Controller(Settings& settings, Config config, CameraSource* camera_source)
-    : settings_(settings), config_(std::move(config)), camera_source_(camera_source) {
+Controller::Controller(Settings& settings, Config config)
+    : settings_(settings), config_(std::move(config)) {
     validate_config(config_);
 }
 
@@ -33,23 +33,6 @@ void Controller::write_verified(const std::string& section, const std::string& k
         throw std::runtime_error("Setting " + section + "." + key +
             " did not retain the requested value; SteamVR or the driver may have rejected it");
     }
-}
-
-bool Controller::reconcile_camera_source() {
-    if (!config_.rgb.enabled || config_.rgb.backend != "steamvr_camera") return false;
-    if (!camera_source_) throw std::runtime_error("SteamVR camera source backend is unavailable");
-    // XRService owns physical disconnect and streaming fallback. Only restore a
-    // chosen source while the RGB module is available; never write on removal.
-    if (!preferred_rgb_ || !camera_source_->rgb_available()) return false;
-    const bool desired = *preferred_rgb_;
-    auto current = camera_source_->read();
-    for (auto value : current) if (value > 1) throw std::runtime_error("Invalid camera configuration during source restoration");
-    // Wait for SteamVR to initialize/reopen its camera renderer. Never turn it on.
-    if (!current[0] || current[2] == static_cast<std::uint8_t>(desired)) return false;
-    current[2] = desired ? 1 : 0;
-    camera_source_->write(current);
-    if (camera_source_->read() != current) throw std::runtime_error("Camera source restoration was rejected");
-    return true;
 }
 
 std::string Controller::apply(Action action) {
@@ -65,60 +48,6 @@ std::string Controller::apply(Action action) {
         write_verified("camera", "roomViewStyle", Value{target});
         return target == kOpaque ? "Passthrough style set to opaque"
                                  : "Passthrough style set to translucent";
-    }
-    case Action::ToggleRgb:
-    case Action::Rgb:
-    case Action::Monochrome: {
-        const auto& rgb = config_.rgb;
-        if (!rgb.enabled) {
-            throw std::runtime_error("RGB switching is disabled: no verified Arcturus RGB camera selection backend is enabled");
-        }
-        if (rgb.backend == "steamvr_camera") {
-            if (!camera_source_) {
-                throw std::runtime_error("SteamVR camera source backend is unavailable");
-            }
-            if (!camera_source_->rgb_available()) {
-                return "Arcturus RGB camera not detected; using built-in monochrome cameras";
-            }
-            // Read all five bytes for every action so changes made by SteamVR
-            // or another application are preserved, including explicit actions.
-            auto target = camera_source_->read();
-            for (const auto value : target) {
-                if (value > 1) {
-                    throw std::runtime_error("SteamVR camera configuration is invalid: expected five Boolean values");
-                }
-            }
-            if (target[0] != 1) {
-                throw std::runtime_error("SteamVR camera configuration is inactive; refusing to enable cameras");
-            }
-            // Renderer reopen/reset may temporarily overwrite byte 2. Once a
-            // choice exists, toggle that choice rather than the transient flag.
-            target[2] = action == Action::ToggleRgb ? static_cast<std::uint8_t>(!preferred_rgb_.value_or(target[2] != 0))
-                : action == Action::Rgb ? 1 : 0;
-            camera_source_->write(target);
-            if (camera_source_->read() != target) {
-                throw std::runtime_error("SteamVR camera configuration did not retain the requested value; "
-                    "the runtime may have rejected the source change or changed another camera option");
-            }
-            preferred_rgb_ = target[2] != 0;
-            return target[2] ? "Camera source set to RGB" : "Camera source set to monochrome";
-        }
-        const auto current = read_typed(settings_, rgb.section, rgb.key, rgb.rgb_value);
-        Value target;
-        if (action == Action::ToggleRgb) {
-            if (current == rgb.rgb_value) {
-                target = rgb.monochrome_value;
-            } else if (current == rgb.monochrome_value) {
-                target = rgb.rgb_value;
-            } else {
-                throw std::runtime_error("Setting " + rgb.section + "." + rgb.key +
-                    " is neither the configured RGB nor monochrome value; refusing to guess");
-            }
-        } else {
-            target = action == Action::Rgb ? rgb.rgb_value : rgb.monochrome_value;
-        }
-        write_verified(rgb.section, rgb.key, target);
-        return target == rgb.rgb_value ? "Camera source set to RGB" : "Camera source set to monochrome";
     }
     }
     throw std::runtime_error("Unknown control action");
@@ -199,7 +128,7 @@ bool PressGate::update(bool active, bool down, bool changed, std::uint64_t monot
 
 void PressGate::reset() {
     // SteamVR can activate a gesture action on its first rising edge. Requiring
-    // an active release sample here would discard that first double/long press.
+    // an active release sample here would discard that first double press.
     // update still requires bChanged and consumes a down sample until release.
     armed_ = true;
 }

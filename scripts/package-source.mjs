@@ -17,11 +17,11 @@ function collect(name) {
     }
   } else entries.push({ name, data: fs.readFileSync(full), mode: 0o644 });
 }
-for (const name of ['CMakeLists.txt', 'LICENSE', 'README.md', 'THIRD_PARTY_NOTICES.md',
+for (const name of ['CMakeLists.txt', 'LICENSE', 'README.md', 'CHANGELOG.md', 'RELEASE_NOTES.md', 'THIRD_PARTY_NOTICES.md',
   '.gitignore', '.gitattributes', 'src', 'assets', 'images', 'cmake', 'scripts', '.github',
   'third_party/json', 'third_party/toolchain-licenses', 'third_party/openvr/src',
   'third_party/openvr/headers', 'third_party/openvr/LICENSE']) collect(name);
-const archive = 'frame-passthrough-shortcuts-0.1.0-source.zip';
+const archive = 'frame-passthrough-shortcuts-0.1.1-source.zip';
 const bytes = createZip(entries);
 fs.mkdirSync(path.join(root, 'dist'), { recursive: true });
 fs.writeFileSync(path.join(root, 'dist', archive), bytes);
