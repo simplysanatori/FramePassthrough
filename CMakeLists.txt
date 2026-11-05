@@ -20,7 +20,7 @@ endif()
 include(cmake/OpenVRLoader.cmake)
 find_package(Threads REQUIRED)
 
-add_library(fps_core STATIC src/config.cpp src/controller.cpp)
+add_library(fps_core STATIC src/config.cpp src/controller.cpp src/openvr_camera_source.cpp)
 target_include_directories(fps_core PUBLIC src third_party/json)
 target_link_libraries(fps_core PUBLIC openvr_loader Threads::Threads)
 target_compile_definitions(fps_core PUBLIC FPS_VERSION="${PROJECT_VERSION}")

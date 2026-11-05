@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <fstream>
 #include <initializer_list>
+#include <limits>
 #include <sstream>
 #include <stdexcept>
 #include <vector>
@@ -51,6 +52,42 @@ std::int64_t integer(const Json& value, const std::string& location,
     return number;
 }
 
+std::string string_value(const Json& value, const std::string& location) {
+    if (!value.is_string()) {
+        invalid(location + " must be a string");
+    }
+    auto result = value.get<std::string>();
+    if (result.find('\0') != std::string::npos) {
+        invalid(location + " must not contain NUL characters");
+    }
+    return result;
+}
+
+Value setting_value(const Json& value, const std::string& location) {
+    if (value.is_boolean()) {
+        return value.get<bool>();
+    }
+    if (value.is_number_integer()) {
+        return static_cast<std::int32_t>(integer(value, location,
+            std::numeric_limits<std::int32_t>::min(),
+            std::numeric_limits<std::int32_t>::max()));
+    }
+    if (value.is_string()) {
+        return string_value(value, location);
+    }
+    invalid(location + " must be a boolean, 32-bit integer, or string");
+}
+
+bool empty_name(const std::string& name) {
+    return name.empty() || name.find_first_not_of(" \t\r\n") == std::string::npos;
+}
+
+void check_no_nul(const std::string& value, const std::string& location) {
+    if (value.find('\0') != std::string::npos) {
+        invalid(location + " must not contain NUL characters");
+    }
+}
+
 } // namespace
 
 void validate_config(const Config& config) {
@@ -59,6 +96,35 @@ void validate_config(const Config& config) {
     }
     if (config.debounce_ms > 5000) {
         invalid("debounce_ms must be between 0 and 5000");
+    }
+    const auto& rgb = config.rgb;
+    if (rgb.backend != "settings" && rgb.backend != "steamvr_camera") {
+        invalid("rgb.backend must be settings or steamvr_camera");
+    }
+    check_no_nul(rgb.section, "rgb.section");
+    check_no_nul(rgb.key, "rgb.key");
+    if (rgb.backend == "steamvr_camera" && (!rgb.section.empty() || !rgb.key.empty())) {
+        invalid("rgb.section and rgb.key must be empty for the steamvr_camera backend");
+    }
+    if (rgb.rgb_value.index() != rgb.monochrome_value.index()) {
+        invalid("rgb.rgb_value and rgb.monochrome_value must have the same type");
+    }
+    if (rgb.rgb_value == rgb.monochrome_value) {
+        invalid("rgb.rgb_value and rgb.monochrome_value must be distinct");
+    }
+    if (const auto* value = std::get_if<std::string>(&rgb.rgb_value)) {
+        check_no_nul(*value, "rgb.rgb_value");
+        check_no_nul(std::get<std::string>(rgb.monochrome_value), "rgb.monochrome_value");
+    }
+    if (rgb.enabled && rgb.backend == "settings" &&
+        (empty_name(rgb.section) || empty_name(rgb.key))) {
+        invalid("enabled RGB control requires rgb.section and rgb.key");
+    }
+    if (rgb.section == "camera" && rgb.key == "enableCamera") {
+        invalid("camera.enableCamera requires a restart and does not select RGB or monochrome cameras");
+    }
+    if (rgb.section == "camera" && (rgb.key == "roomViewStyle" || rgb.key == "roomView")) {
+        invalid("RGB control must not overwrite camera." + rgb.key);
     }
 }
 
@@ -85,7 +151,7 @@ Config parse_config(const std::string& json_text) {
     } catch (const Json::exception& error) {
         invalid(error.what());
     }
-    check_keys(document, {"poll_interval_ms", "debounce_ms"}, "config");
+    check_keys(document, {"poll_interval_ms", "debounce_ms", "rgb"}, "config");
     Config config;
     if (document.contains("poll_interval_ms")) {
         config.poll_interval_ms = static_cast<std::uint32_t>(integer(
@@ -94,6 +160,31 @@ Config parse_config(const std::string& json_text) {
     if (document.contains("debounce_ms")) {
         config.debounce_ms = static_cast<std::uint32_t>(integer(
             document.at("debounce_ms"), "debounce_ms", 0, 5000));
+    }
+    if (document.contains("rgb")) {
+        const auto& rgb = document.at("rgb");
+        check_keys(rgb, {"enabled", "backend", "section", "key", "rgb_value", "monochrome_value"}, "rgb");
+        if (rgb.contains("enabled")) {
+            if (!rgb.at("enabled").is_boolean()) {
+                invalid("rgb.enabled must be a boolean");
+            }
+            config.rgb.enabled = rgb.at("enabled").get<bool>();
+        }
+        if (rgb.contains("backend")) {
+            config.rgb.backend = string_value(rgb.at("backend"), "rgb.backend");
+        }
+        if (rgb.contains("section")) {
+            config.rgb.section = string_value(rgb.at("section"), "rgb.section");
+        }
+        if (rgb.contains("key")) {
+            config.rgb.key = string_value(rgb.at("key"), "rgb.key");
+        }
+        if (rgb.contains("rgb_value")) {
+            config.rgb.rgb_value = setting_value(rgb.at("rgb_value"), "rgb.rgb_value");
+        }
+        if (rgb.contains("monochrome_value")) {
+            config.rgb.monochrome_value = setting_value(rgb.at("monochrome_value"), "rgb.monochrome_value");
+        }
     }
     validate_config(config);
     return config;

@@ -1,5 +1,5 @@
 {
-  "action_manifest_version": 2,
+  "action_manifest_version": 3,
   "alias_info": {},
   "app_key": "local.frame.passthrough.shortcuts",
   "bindings": {

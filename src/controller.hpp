@@ -1,9 +1,11 @@
 #pragma once
 
 #include "config.hpp"
+#include "camera_source.hpp"
 
 #include <cstdint>
 #include <string>
+#include <optional>
 
 namespace fps {
 
@@ -20,16 +22,24 @@ enum class Action {
     ToggleStyle,
     Translucent,
     Opaque,
+    ToggleRgb,
+    Rgb,
+    Monochrome,
 };
 
 class Controller {
 public:
-    Controller(Settings& settings, Config config);
+    Controller(Settings& settings, Config config, CameraSource* camera_source = nullptr);
     std::string apply(Action action);
+    void remember_rgb(bool rgb) { preferred_rgb_ = rgb; }
+    std::optional<bool> preferred_rgb() const { return preferred_rgb_; }
+    bool reconcile_camera_source();
 
 private:
     Settings& settings_;
     Config config_;
+    CameraSource* camera_source_;
+    std::optional<bool> preferred_rgb_;
     void write_verified(const std::string& section, const std::string& key, const Value& target);
 };
 
