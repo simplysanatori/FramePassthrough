@@ -82,8 +82,8 @@ This is an unofficial project, not affiliated with Valve or the upstream author.
 
 ## Licence
 
-MIT, as upstream: see [LICENSE](LICENSE) (Copyright (c) 2026 Frame Passthrough Shortcuts contributors). The fork's changes are Copyright (c) 2026 simplysanatori, under the same licence. Upstream's README is kept as [docs/UPSTREAM-README.md](docs/UPSTREAM-README.md).
+MIT, same as upstream. See [LICENSE](LICENSE). Upstream's README is kept as [docs/UPSTREAM-README.md](docs/UPSTREAM-README.md).
 
 ## How this was made
 
-This is vibe coded, with manual review throughout. I wrote it with Claude Code running on the Frame itself.
+I made this with partial assistance from Claude.
