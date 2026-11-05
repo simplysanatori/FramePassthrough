@@ -54,6 +54,3 @@ The README gives this command with the full program path, `~/.local/share/FrameP
 
 On the Frame: `scripts/make-release.sh`. It builds, runs the tests and writes the release tarball to `dist/`. See [docs/TECHNICAL.md](docs/TECHNICAL.md).
 
-## Support note
-
-The Ko-fi link pays for the Claude API credits these ports are built with, spent as carefully as I can.

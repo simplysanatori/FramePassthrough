@@ -74,7 +74,7 @@ Open an [issue](https://github.com/simplysanatori/FramePassthrough/issues) sayin
 
 Support KominoVR's [Frame Passthrough Shortcuts](https://github.com/KominoVR/frame-passthrough-shortcuts) first: star and follow it, report bugs there, send improvements upstream.
 
-For more Steam Frame ports, you can [buy me a coffee](https://ko-fi.com/sana748653). It pays for the Claude API credits.
+For more Steam Frame ports, you can [buy me a coffee](https://ko-fi.com/sana748653).
 
 ## Credits
 
@@ -90,4 +90,4 @@ MIT, same as upstream. See [LICENSE](LICENSE).
 
 ## How this was made
 
-I made this with partial assistance from Claude.
+I started this project and used AI (Claude) to speed up development. I write, review and fix code by hand all the way through, keep the AI's work checked and reined in, and aim to keep the tool as lightweight as possible. I test it on my own Steam Frame.
