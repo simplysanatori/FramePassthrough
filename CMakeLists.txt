@@ -57,3 +57,13 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
 endif()
 install(DIRECTORY assets/ DESTINATION .)
 install(FILES README.md LICENSE DESTINATION .)
+
+# Read-only SteamVR state probe used to study passthrough and scene signals.
+# Development only; not part of the release bundle.
+option(FPS_BUILD_PROBE "Build the read-only SteamVR probe" ON)
+if(FPS_BUILD_PROBE)
+    add_executable(fp-probe tools/probe/fp_probe.cpp)
+    target_link_libraries(fp-probe PRIVATE openvr_loader Threads::Threads)
+    target_compile_options(fp-probe PRIVATE -Wall -Wextra)
+    target_link_options(fp-probe PRIVATE -static-libgcc -static-libstdc++)
+endif()
