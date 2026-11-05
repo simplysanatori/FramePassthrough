@@ -25,11 +25,9 @@ struct Config {
     // Which signal decides that passthrough is visible: auto, setting,
     // events, steamvr_log, or off (never gate on passthrough).
     std::string passthrough_signal = "auto";
-    // Disable the gestures while a game (any scene application other than a
-    // SteamVR home) is running, even when passthrough is visible. On by
-    // default: the shortcuts are for the home view; false lets them act in
-    // games too.
-    bool disable_while_game_running = true;
+    // Also disable the gestures while a game (any scene application other
+    // than a SteamVR home) is running, even when passthrough is visible.
+    bool disable_while_game_running = false;
 };
 
 // Returns json_text with one top-level option set, keeping the other keys

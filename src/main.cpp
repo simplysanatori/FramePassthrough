@@ -820,7 +820,7 @@ void help() {
         "  --action NAME         toggle-style, translucent, opaque, toggle-rgb, rgb, monochrome\n"
         "  --validate            Check config and bundled action manifest without SteamVR\n"
         "  --set disable-while-game-running on|off\n"
-        "                        Disable the gestures while a game runs (default on)\n"
+        "                        Also disable the gestures while a game runs (default off)\n"
         "  --config PATH         Use this JSON config (default: config.json beside executable)\n"
         "  --help                Show this help");
 }

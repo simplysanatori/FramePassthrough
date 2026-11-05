@@ -1,5 +1,5 @@
 {
   "poll_interval_ms": 20,
   "debounce_ms": 250,
-  "disable_while_game_running": true
+  "disable_while_game_running": false
 }

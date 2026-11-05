@@ -34,7 +34,7 @@ enum class GestureKind {
 struct GateInputs {
     Visibility passthrough = Visibility::Unknown;
     bool game_running = false;
-    bool disable_while_game_running = true;
+    bool disable_while_game_running = false;
 };
 
 struct GateTimings {
