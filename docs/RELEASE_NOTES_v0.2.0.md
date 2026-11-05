@@ -9,7 +9,7 @@ Thanks to KominoVR for the original app.
 - The colour / mono camera switch is restored. The original removed it in 0.1.1.
 - Your camera choice is saved and set again when passthrough opens. 0.1.0 set it many times a second, all the time. Now it only does so while passthrough is showing.
 - The gestures only work while passthrough is showing, and ignore a press started before it opened. The original acted on every double-press with the dashboard closed.
-- New option `disable_while_game_running` turns the gestures off while a VR game runs. Set it in `config.json` or with `frame-passthrough-shortcuts --set disable-while-game-running on`.
+- New option `disable_while_game_running` (off by default) turns the gestures off while a VR game runs. Set it in `config.json` or with `frame-passthrough-shortcuts --set disable-while-game-running on`.
 - It adds nothing to your Steam library, and its log lists only its own errors.
 - It replaces the original in place and keeps your camera choice, bindings and SteamVR autostart.
 

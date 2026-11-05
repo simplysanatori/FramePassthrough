@@ -168,6 +168,16 @@ After `--stop` and any of the one-shot commands, run `--install` to start the ap
 
 FramePassthrough draws nothing. It creates no overlay surface and no window. It wakes every 20 ms to read the controller actions, and twice a second to check the passthrough state and the running app. It only reads the camera state while passthrough is showing.
 
+## Technical notes
+
+How the app tells that passthrough is showing (`passthrough_signal` `auto`), as seen on SteamVR 2.19.1:
+
+- **No game running** (the Frame's home view has no SteamVR scene app): opening or closing passthrough, with the side button or the Steam button, flips SteamVR's `camera.enableConstructRoomView` setting and sends `VREvent_CameraSettingsHaveChanged`. The app reads that setting. Opening and closing the dashboard does not change it.
+- **A game running**: SteamVR sends `VREvent_RoomViewShown` and `VREvent_RoomViewHidden` when passthrough opens and closes over the game. Passthrough opened from the dashboard sends no event, but XRService logs its room view mode (`currentRoomViewRenderingMode`, 0 = off) to `vrserver.txt`, so the app reads that too and the newer of the two wins. When a game starts, passthrough counts as off until one of them says otherwise. `enableConstructRoomView` does not change in a game.
+- If the app has nothing to go on yet, it lets the gestures act rather than go dead.
+
+The saved camera is written only when the source SteamVR reports differs from it, which mostly happens when SteamVR resets it after a game closes. Each change makes the compositor restart the camera feed, so the app never writes an unchanged value.
+
 ## Files
 
 | What | Where |
@@ -187,7 +197,7 @@ The installer and the app change nothing else on the Frame. The binding choice l
 - **A double-press does nothing.** Passthrough must be showing and the SteamVR dashboard closed. Run `--status` to see that the app is running. `application.log` has a `Shortcuts enabled` or `Shortcuts disabled` line with the reason each time that changes.
 - **`application.log` says "No active bindings".** Choose the Frame Passthrough Shortcuts binding in SteamVR's controller bindings (see [Controls](#controls)).
 - **The hold does nothing.** The log says `Arcturus RGB camera not detected` when the RGB camera is not connected. The monochrome cameras are then the only ones.
-- **The gestures do nothing in a game.** Check `disable_while_game_running` in `config.json`. `runtime.json` shows the gate's current reason.
+- **The gestures do nothing in a game.** Check `disable_while_game_running` in `config.json` (it is `false` by default). `runtime.json` shows the gate's current reason.
 - **A game reacts to the stick click as well.** That is SteamVR sending the click to both. See [Status](#status).
 - **The original app came back.** Launching its old library entry registers it again. Run `install.sh` again and remove the old entry.
 - **`install.sh` says another copy is still running.** Something holds `~/.config/frame-passthrough-shortcuts/instance.lock`. Restart SteamVR, or the Frame, and run it again.
