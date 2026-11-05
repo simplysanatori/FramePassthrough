@@ -2,10 +2,10 @@
 
 ## 0.2.0 (November 2026)
 
-The first release of FramePassthrough, a fork of KominoVR's Frame Passthrough Shortcuts 0.1.1 for the Steam Frame. The original stays active in games, where a game's own stick double-press or hold can trigger it. This fork only acts in Home with passthrough showing.
+The first release of FramePassthrough, a fork of KominoVR's Frame Passthrough Shortcuts 0.1.1 for the Steam Frame. The original reacts to the stick gestures all the time, so a game's own stick hold or double-press can trigger it. This fork only reacts while passthrough is showing, in Home or in a game.
 
 - The gestures act only while passthrough is showing. A gesture started before passthrough opened is ignored.
-- `disable_while_game_running` (default `true`) ignores the gestures while a SteamVR or OpenXR game runs, even with passthrough open. `false`, or `--set disable-while-game-running off`, lets them act in games.
+- `disable_while_game_running` (default `false`): `true`, or `--set disable-while-game-running on`, turns the gestures off while a SteamVR or OpenXR game runs, even with passthrough open.
 - `passthrough_signal` (`auto` default, `setting`, `events`, `steamvr_log`, `off`) picks how passthrough is detected. `config.json` is reloaded within a second of an edit.
 - Restored 0.1.0's camera switch: hold either stick click for one second to switch between the Arcturus RGB colour camera and the monochrome cameras. The RGB and monochrome actions are back in the SteamVR bindings.
 - The camera choice is saved and set again when passthrough opens. It is only checked while passthrough is showing, and only written when it differs.

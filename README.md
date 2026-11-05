@@ -2,7 +2,7 @@
 
 Passthrough shortcuts on the Steam Frame's thumbsticks. A fork of KominoVR's [Frame Passthrough Shortcuts](https://github.com/KominoVR/frame-passthrough-shortcuts) 0.1.1.
 
-I forked it because the original stays active during games. A game control that uses a thumbstick double-press or hold can switch your passthrough by accident. FramePassthrough checks whether a SteamVR or OpenXR game is running and whether passthrough is showing. It only acts in Home with passthrough showing, so it never conflicts with a game's own stick controls.
+I forked it because the original reacts to the stick gestures all the time, during games too. A game's own thumbstick hold or double-press switches passthrough by accident. FramePassthrough only reacts while passthrough is showing, in Home or in a SteamVR or OpenXR game. With passthrough off, a game's stick controls never trigger it.
 
 I also restored the colour / mono camera switch that the original removed in 0.1.1.
 
@@ -13,7 +13,7 @@ Version 0.2.0. It runs on my Steam Frame.
 Known issues:
 
 - The gestures need the SteamVR dashboard closed.
-- If you let the gestures act in games, the game still gets the stick clicks too. SteamVR does that for every overlay app.
+- With passthrough open in a game, the game also gets the stick clicks. SteamVR does that for every overlay app.
 - The camera switch uses SteamVR's internal camera controls. A SteamVR update can change them.
 - Choosing the mono cameras does not power off the RGB camera.
 
@@ -41,7 +41,7 @@ To remove: `~/.local/share/FramePassthrough/app/uninstall.sh`.
 
 ## Controls
 
-With passthrough showing (side button or Steam button) and the dashboard closed, on either thumbstick:
+Whenever passthrough is showing (side button or Steam button), in Home or in a game, with the dashboard closed, on either thumbstick:
 
 | Stick click | Action |
 | --- | --- |
@@ -54,7 +54,7 @@ Remap them in **SteamVR controller bindings → Frame Passthrough Shortcuts**.
 
 `~/.local/share/FramePassthrough/app/config.json`, reloaded within a second of an edit.
 
-`disable_while_game_running` is `true` by default. Set it to `false`, or run `frame-passthrough-shortcuts --set disable-while-game-running off`, to let the gestures act in games while passthrough is open.
+`disable_while_game_running` is `false` by default. Set it to `true`, or run `frame-passthrough-shortcuts --set disable-while-game-running on`, to turn the gestures off in games even with passthrough open.
 
 The other keys, the command line and the file locations are in [docs/TECHNICAL.md](docs/TECHNICAL.md).
 

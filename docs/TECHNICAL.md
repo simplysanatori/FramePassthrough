@@ -2,7 +2,7 @@
 
 ## When the gestures act
 
-The app reads its SteamVR actions only while its gate is open. The gate is open when passthrough is showing and, with `disable_while_game_running` on (the default), no game is running. While the gate is closed the app releases its action set and ignores the sticks. A gesture that began before the gate opened is ignored: presses are rejected for 250 ms (double-press) or 1050 ms (hold) after it opens.
+The app reads its SteamVR actions only while its gate is open. The gate is open when passthrough is showing, in Home or in a game. With `disable_while_game_running` on (off by default), it also stays closed while a game runs. While the gate is closed the app releases its action set and ignores the sticks. A gesture that began before the gate opened is ignored: presses are rejected for 250 ms (double-press) or 1050 ms (hold) after it opens.
 
 A game is any SteamVR scene application other than SteamVR Home, the stock environments and SteamVR's own components. OpenXR titles count. The Frame's home view runs no scene application.
 
@@ -24,7 +24,7 @@ The saved choice is in `~/.config/frame-passthrough-shortcuts/camera-preference.
 
 | Key | Default | What it does |
 | --- | --- | --- |
-| `disable_while_game_running` | `true` | Ignore the gestures while a game runs, even with passthrough showing |
+| `disable_while_game_running` | `false` | `true` ignores the gestures while a game runs, even with passthrough showing |
 | `passthrough_signal` | `"auto"` | `auto`, `setting`, `events`, `steamvr_log` or `off`. `off` lets the gestures act at any time, as in the original |
 | `poll_interval_ms` | `20` | Controller read interval, 10 to 1000 ms |
 | `debounce_ms` | `250` | Shortest time between two firings of one action, 0 to 5000 ms |
