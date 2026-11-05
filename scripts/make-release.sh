@@ -24,6 +24,16 @@ cmake -S "$ROOT" -B "$BUILD" -G Ninja -DCMAKE_BUILD_TYPE=Release -DFPS_BUILD_PRO
 nice -n 10 cmake --build "$BUILD"
 ctest --test-dir "$BUILD" --output-on-failure
 
+# The binary must load on a stock Frame: refuse to ship one that needs a
+# newer glibc than MAX_GLIBC (override in the environment).
+MAX_GLIBC=${MAX_GLIBC:-2.38}
+NEEDED_GLIBC=$(objdump -T "$BUILD/bin/frame-passthrough-shortcuts" | grep -o 'GLIBC_[0-9][0-9.]*' | sed 's/GLIBC_//' | sort -uV | tail -1)
+echo "highest glibc symbol version needed: GLIBC_$NEEDED_GLIBC (limit $MAX_GLIBC)"
+if [ "$(printf '%s\n%s\n' "$NEEDED_GLIBC" "$MAX_GLIBC" | sort -V | tail -1)" != "$MAX_GLIBC" ]; then
+  echo "the binary needs GLIBC_$NEEDED_GLIBC, newer than MAX_GLIBC=$MAX_GLIBC" >&2
+  exit 1
+fi
+
 STAGE=$(mktemp -d)
 trap 'rm -rf "$STAGE"' EXIT
 P=$STAGE/$NAME
