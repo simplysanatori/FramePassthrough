@@ -7,6 +7,8 @@
 #include <array>
 #include <chrono>
 #include <csignal>
+#include <cstdio>
+#include <ctime>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
@@ -30,9 +32,22 @@ constexpr const char* devkit_game_id = "Frame_Passthrough_Shortcuts";
 volatile std::sig_atomic_t stopping = 0;
 std::ofstream application_log;
 void stop(int) { stopping = 1; }
+std::string wall_clock() {
+    const auto now = std::chrono::system_clock::now();
+    const auto seconds = std::chrono::system_clock::to_time_t(now);
+    std::tm local{};
+    localtime_r(&seconds, &local);
+    char text[32];
+    std::strftime(text, sizeof(text), "%Y-%m-%d %H:%M:%S", &local);
+    const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count() % 1000;
+    char full[40];
+    std::snprintf(full, sizeof(full), "%s.%03d", text, static_cast<int>(ms));
+    return full;
+}
 void log(const std::string& message) {
     std::cout << message << std::endl;
-    if (application_log.is_open()) application_log << message << std::endl;
+    // Timestamps let application.log be lined up with SteamVR's own logs.
+    if (application_log.is_open()) application_log << wall_clock() << ' ' << message << std::endl;
 }
 
 fs::path executable() {
@@ -255,7 +270,12 @@ int run(const fs::path& binary, const fs::path& assets, const fs::path& config_p
             if (event.eventType == vr::VREvent_ApplicationListUpdated &&
                 !vr::VRApplications()->IsApplicationInstalled(app_key) && removal_seen == std::chrono::steady_clock::time_point{})
                 removal_seen = std::chrono::steady_clock::now();
-            if (event.eventType == vr::VREvent_Input_BindingLoadFailed) log("SteamVR could not load the selected bindings. Select a new binding in SteamVR.");
+            // SteamVR broadcasts binding results for every application. The
+            // low 32 bits of the app container are the owning process ID, so
+            // ignore failures that belong to other apps (e.g. steam.client).
+            if (event.eventType == vr::VREvent_Input_BindingLoadFailed &&
+                static_cast<uint32_t>(event.data.inputBinding.ulAppContainer & 0xffffffffu) == static_cast<uint32_t>(getpid()))
+                log("SteamVR could not load the selected bindings. Select a new binding in SteamVR.");
         }
         const bool removed_from_steamvr = !vr::VRApplications()->IsApplicationInstalled(app_key);
         const bool install_files_missing = !fs::exists(binary);
