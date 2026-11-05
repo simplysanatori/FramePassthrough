@@ -1,0 +1,301 @@
+// Unit tests for the SteamVR-free logic: gate state machine, passthrough
+// signal parsing and configuration. Run with ctest; no SteamVR needed.
+#include "config.hpp"
+#include "controller.hpp"
+#include "gate.hpp"
+#include "passthrough_state.hpp"
+
+#include <cstdio>
+#include <cstdlib>
+#include <filesystem>
+#include <fstream>
+#include <functional>
+#include <iostream>
+#include <stdexcept>
+#include <string>
+#include <vector>
+
+#include <unistd.h>
+
+namespace fs = std::filesystem;
+using namespace fps;
+
+namespace {
+
+int failures = 0;
+int checks = 0;
+
+#define CHECK(condition)                                                                 \
+    do {                                                                                 \
+        ++checks;                                                                        \
+        if (!(condition)) {                                                              \
+            ++failures;                                                                  \
+            std::cerr << __FILE__ << ":" << __LINE__ << ": CHECK failed: " #condition "\n"; \
+        }                                                                                \
+    } while (0)
+
+template <typename F>
+bool throws(F&& f) {
+    try { f(); } catch (const std::exception&) { return true; }
+    return false;
+}
+
+struct TempDir {
+    fs::path path;
+    TempDir() {
+        char pattern[] = "/tmp/fps-test-XXXXXX";
+        if (!::mkdtemp(pattern)) throw std::runtime_error("mkdtemp");
+        path = pattern;
+    }
+    ~TempDir() { std::error_code e; fs::remove_all(path, e); }
+};
+
+void append(const fs::path& file, const std::string& text) {
+    std::ofstream out(file, std::ios::app | std::ios::binary);
+    out << text;
+}
+
+GateInputs inputs(Visibility v, bool game = false, bool disable_in_game = false) {
+    GateInputs in;
+    in.passthrough = v;
+    in.game_running = game;
+    in.disable_while_game_running = disable_in_game;
+    return in;
+}
+
+void test_gate_open_closed() {
+    InputGate gate;
+    CHECK(gate.update(inputs(Visibility::Hidden), 1000));
+    CHECK(!gate.open());
+    CHECK(gate.reason() == GateReason::PassthroughHidden);
+    CHECK(!gate.update(inputs(Visibility::Hidden), 1020)); // no change, no log
+    CHECK(!gate.accept(GestureKind::DoublePress, 5000));
+    CHECK(!gate.accept(GestureKind::Hold, 5000));
+
+    CHECK(gate.update(inputs(Visibility::Visible), 2000));
+    CHECK(gate.open());
+    CHECK(gate.reason() == GateReason::PassthroughVisible);
+    CHECK(gate.opened_at_ms() == 2000);
+
+    CHECK(gate.update(inputs(Visibility::Hidden), 3000));
+    CHECK(!gate.open());
+}
+
+void test_gate_unknown_fails_open() {
+    InputGate gate;
+    CHECK(gate.update(inputs(Visibility::Unknown), 0));
+    CHECK(gate.open());
+    CHECK(gate.reason() == GateReason::PassthroughUnknown);
+    // Unknown -> visible keeps the gate open and does not restart the guard.
+    CHECK(gate.update(inputs(Visibility::Visible), 5000)); // reason changed
+    CHECK(gate.open());
+    CHECK(gate.opened_at_ms() == 0);
+}
+
+void test_gate_mid_gesture_guard() {
+    GateTimings timings;
+    timings.double_press_guard_ms = 250;
+    timings.hold_guard_ms = 1050;
+    InputGate gate(timings);
+    gate.update(inputs(Visibility::Hidden), 0);
+    gate.update(inputs(Visibility::Visible), 10000);
+    // A double press whose first press happened before opening completes
+    // within double_press_delay of opening: rejected.
+    CHECK(!gate.accept(GestureKind::DoublePress, 10000));
+    CHECK(!gate.accept(GestureKind::DoublePress, 10249));
+    CHECK(gate.accept(GestureKind::DoublePress, 10250));
+    // A hold that began while closed fires < 1 s after opening: rejected.
+    CHECK(!gate.accept(GestureKind::Hold, 10500));
+    CHECK(!gate.accept(GestureKind::Hold, 11049));
+    // A hold that began at or after opening fires >= 1 s later: accepted.
+    CHECK(gate.accept(GestureKind::Hold, 11050));
+    // Reopening restarts the guard.
+    gate.update(inputs(Visibility::Hidden), 20000);
+    gate.update(inputs(Visibility::Visible), 21000);
+    CHECK(!gate.accept(GestureKind::DoublePress, 21100));
+    CHECK(gate.accept(GestureKind::DoublePress, 21300));
+    // Clock going backwards never accepts.
+    CHECK(!gate.accept(GestureKind::DoublePress, 100));
+}
+
+void test_gate_game_mode() {
+    InputGate gate;
+    // Default: option off, a running game does not matter.
+    gate.update(inputs(Visibility::Visible, true, false), 0);
+    CHECK(gate.open());
+    // Option on and a game running: closed even with passthrough visible.
+    CHECK(gate.update(inputs(Visibility::Visible, true, true), 100));
+    CHECK(!gate.open());
+    CHECK(gate.reason() == GateReason::GameRunning);
+    // Game exits: open again, guard restarts.
+    CHECK(gate.update(inputs(Visibility::Visible, false, true), 5000));
+    CHECK(gate.open());
+    CHECK(gate.opened_at_ms() == 5000);
+    // Option on, no game, passthrough hidden: closed for passthrough.
+    gate.update(inputs(Visibility::Hidden, false, true), 6000);
+    CHECK(gate.reason() == GateReason::PassthroughHidden);
+    // Game mode wins over unknown passthrough too.
+    gate.update(inputs(Visibility::Unknown, true, true), 7000);
+    CHECK(!gate.open());
+}
+
+void test_press_gate_debounce() {
+    PressGate press(250);
+    CHECK(press.update(true, true, true, 1000));   // rising edge fires
+    CHECK(!press.update(true, true, false, 1020)); // still held
+    CHECK(!press.update(true, false, true, 1040)); // release
+    CHECK(!press.update(true, true, true, 1100));  // within debounce
+    CHECK(!press.update(true, false, true, 1150));
+    CHECK(press.update(true, true, true, 1300));   // after debounce
+    // A press seen without bChanged (already down when first read) never fires.
+    PressGate held(250);
+    CHECK(!held.update(true, true, false, 0));
+    CHECK(!held.update(true, true, true, 10)); // consumed until release
+    CHECK(!held.update(true, false, true, 20));
+    CHECK(held.update(true, true, true, 30));
+    // Inactive action resets arming.
+    PressGate inactive(0);
+    CHECK(!inactive.update(false, true, true, 0));
+    CHECK(inactive.update(true, true, true, 10));
+}
+
+void test_parse_rendering_mode() {
+    CHECK(parse_room_view_rendering_mode("                    \"currentRoomViewRenderingMode\": 6") == 6);
+    CHECK(parse_room_view_rendering_mode("\"currentRoomViewRenderingMode\":0") == 0);
+    CHECK(parse_room_view_rendering_mode("\"currentRoomViewRenderingMode\" : 12,") == 12);
+    CHECK(!parse_room_view_rendering_mode("\"currentRoomViewRenderingMode\": x"));
+    CHECK(!parse_room_view_rendering_mode("\"currentRoomViewRenderingMode\""));
+    CHECK(!parse_room_view_rendering_mode("isCameraViewEnabled\": 0"));
+    CHECK(!parse_room_view_rendering_mode(""));
+}
+
+void test_log_follower() {
+    TempDir dir;
+    const auto file = dir.path / "vrserver.txt";
+    LogFollower follower(file);
+    std::vector<std::string> lines;
+    const auto collect = [&](const std::string& line) { lines.push_back(line); };
+    follower.poll(collect); // missing file is fine
+    CHECK(lines.empty());
+    append(file, "one\ntwo\npart");
+    follower.poll(collect);
+    CHECK(lines.size() == 2 && lines[0] == "one" && lines[1] == "two");
+    append(file, "ial\n");
+    follower.poll(collect);
+    CHECK(lines.size() == 3 && lines[2] == "partial");
+    follower.poll(collect); // nothing new
+    CHECK(lines.size() == 3);
+    // Rotation: SteamVR renames the log and starts a new one.
+    fs::rename(file, dir.path / "vrserver.previous.txt");
+    append(file, "fresh\n");
+    follower.poll(collect);
+    CHECK(lines.size() == 4 && lines[3] == "fresh");
+    // Truncation in place.
+    { std::ofstream truncate(file, std::ios::trunc); truncate << "t\n"; }
+    follower.poll(collect);
+    CHECK(lines.back() == "t");
+}
+
+const char* kBlock =
+    "Thu Nov 05 2026 08:35:46.761981 [Info] - cv: [XRClientDelegate] SessionSettingsChanged: {\n"
+    "            \"xrSessionSettings\": {\n"
+    "                \"isCameraViewEnabled\": 0,\n"
+    "                \"renderingOptions\": {\n"
+    "                    \"currentRoomViewRenderingMode\": %d\n"
+    "                }\n";
+
+std::string block(int mode) {
+    char text[512];
+    std::snprintf(text, sizeof(text), kBlock, mode);
+    return text;
+}
+
+void test_passthrough_state() {
+    TempDir dir;
+    const auto file = dir.path / "vrserver.txt";
+    // History: the newest logged mode decides the startup state.
+    append(file, block(0) + block(6) + block(0) + block(6));
+    PassthroughState state(PassthroughSignal::Auto, file);
+    CHECK(state.visibility() == Visibility::Unknown);
+    state.poll();
+    CHECK(state.visibility() == Visibility::Visible);
+    append(file, block(0));
+    state.poll();
+    CHECK(state.visibility() == Visibility::Hidden);
+    // Auto: the newest observation wins, whichever source it came from.
+    state.on_room_view_event(true);
+    CHECK(state.visibility() == Visibility::Visible);
+    append(file, block(0));
+    state.poll();
+    CHECK(state.visibility() == Visibility::Hidden);
+
+    PassthroughState events(PassthroughSignal::Events, file);
+    events.poll();
+    CHECK(events.visibility() == Visibility::Unknown); // log ignored
+    events.on_room_view_event(false);
+    CHECK(events.visibility() == Visibility::Hidden);
+
+    PassthroughState log_only(PassthroughSignal::SteamVrLog, file);
+    log_only.on_room_view_event(true);
+    CHECK(log_only.visibility() == Visibility::Unknown); // events ignored
+    log_only.poll();
+    CHECK(log_only.visibility() == Visibility::Hidden);
+
+    PassthroughState off(PassthroughSignal::Off, file);
+    CHECK(off.visibility() == Visibility::Visible);
+
+    PassthroughState missing(PassthroughSignal::Auto, dir.path / "absent.txt");
+    missing.poll();
+    CHECK(missing.visibility() == Visibility::Unknown);
+}
+
+void test_scene_classification() {
+    CHECK(!is_game_scene_app(0, ""));
+    CHECK(!is_game_scene_app(0, "steam.app.620"));
+    CHECK(is_game_scene_app(1234, "steam.app.620"));
+    CHECK(is_game_scene_app(1234, "system.generated.openxr.primedgun.primedgun"));
+    CHECK(is_game_scene_app(1234, "")); // unknown key: still a scene app
+    CHECK(!is_game_scene_app(1234, "steam.app.250820"));
+    CHECK(!is_game_scene_app(1234, "openvr.tool.steamvr_environments"));
+    CHECK(!is_game_scene_app(1234, "openvr.component.vrcompositor"));
+    CHECK(!is_game_scene_app(1234, "system.generated.gamescope"));
+}
+
+void test_config() {
+    CHECK(parse_config("{}").passthrough_signal == "auto");
+    CHECK(parse_config("{\"passthrough_signal\": \"steamvr_log\"}").passthrough_signal == "steamvr_log");
+    CHECK(throws([] { parse_config("{\"passthrough_signal\": \"maybe\"}"); }));
+    // The 0.1.x config files keep working.
+    const auto old = parse_config("{\n  \"poll_interval_ms\": 20,\n  \"debounce_ms\": 250\n}\n");
+    CHECK(old.poll_interval_ms == 20 && old.debounce_ms == 250);
+    CHECK(throws([] { parse_config("{\"unknown\": 1}"); }));
+}
+
+} // namespace
+
+int main() {
+    const std::vector<std::pair<const char*, std::function<void()>>> tests = {
+        {"gate_open_closed", test_gate_open_closed},
+        {"gate_unknown_fails_open", test_gate_unknown_fails_open},
+        {"gate_mid_gesture_guard", test_gate_mid_gesture_guard},
+        {"gate_game_mode", test_gate_game_mode},
+        {"press_gate_debounce", test_press_gate_debounce},
+        {"parse_rendering_mode", test_parse_rendering_mode},
+        {"log_follower", test_log_follower},
+        {"passthrough_state", test_passthrough_state},
+        {"scene_classification", test_scene_classification},
+        {"config", test_config},
+    };
+    for (const auto& [name, test] : tests) {
+        const int before = failures;
+        try {
+            test();
+        } catch (const std::exception& error) {
+            ++failures;
+            std::cerr << name << ": unexpected exception: " << error.what() << "\n";
+        }
+        std::cout << (failures == before ? "PASS " : "FAIL ") << name << "\n";
+    }
+    std::cout << checks << " checks, " << failures << " failures\n";
+    return failures == 0 ? 0 : 1;
+}

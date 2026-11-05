@@ -91,6 +91,10 @@ void check_no_nul(const std::string& value, const std::string& location) {
 } // namespace
 
 void validate_config(const Config& config) {
+    const auto& signal = config.passthrough_signal;
+    if (signal != "auto" && signal != "events" && signal != "steamvr_log" && signal != "off") {
+        invalid("passthrough_signal must be auto, events, steamvr_log or off");
+    }
     if (config.poll_interval_ms < 10 || config.poll_interval_ms > 1000) {
         invalid("poll_interval_ms must be between 10 and 1000");
     }
@@ -151,7 +155,7 @@ Config parse_config(const std::string& json_text) {
     } catch (const Json::exception& error) {
         invalid(error.what());
     }
-    check_keys(document, {"poll_interval_ms", "debounce_ms", "rgb"}, "config");
+    check_keys(document, {"poll_interval_ms", "debounce_ms", "rgb", "passthrough_signal"}, "config");
     Config config;
     if (document.contains("poll_interval_ms")) {
         config.poll_interval_ms = static_cast<std::uint32_t>(integer(
@@ -160,6 +164,9 @@ Config parse_config(const std::string& json_text) {
     if (document.contains("debounce_ms")) {
         config.debounce_ms = static_cast<std::uint32_t>(integer(
             document.at("debounce_ms"), "debounce_ms", 0, 5000));
+    }
+    if (document.contains("passthrough_signal")) {
+        config.passthrough_signal = string_value(document.at("passthrough_signal"), "passthrough_signal");
     }
     if (document.contains("rgb")) {
         const auto& rgb = document.at("rgb");

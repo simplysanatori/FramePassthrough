@@ -20,8 +20,14 @@ endif()
 include(cmake/OpenVRLoader.cmake)
 find_package(Threads REQUIRED)
 
-add_library(fps_core STATIC src/config.cpp src/controller.cpp src/openvr_camera_source.cpp)
+# SteamVR-free logic, shared with the unit tests.
+add_library(fps_logic STATIC src/config.cpp src/controller.cpp src/gate.cpp src/passthrough_state.cpp)
+target_include_directories(fps_logic PUBLIC src third_party/json)
+target_compile_options(fps_logic PRIVATE -Wall -Wextra -Wpedantic)
+
+add_library(fps_core STATIC src/openvr_camera_source.cpp)
 target_include_directories(fps_core PUBLIC src third_party/json)
+target_link_libraries(fps_core PUBLIC fps_logic)
 target_link_libraries(fps_core PUBLIC openvr_loader Threads::Threads)
 target_compile_definitions(fps_core PUBLIC FPS_VERSION="${PROJECT_VERSION}")
 
@@ -57,6 +63,13 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
 endif()
 install(DIRECTORY assets/ DESTINATION .)
 install(FILES README.md LICENSE DESTINATION .)
+
+# Unit tests for the SteamVR-free logic: ctest --test-dir <build>
+enable_testing()
+add_executable(fps-tests tests/test_logic.cpp)
+target_link_libraries(fps-tests PRIVATE fps_logic)
+target_compile_options(fps-tests PRIVATE -Wall -Wextra)
+add_test(NAME logic COMMAND fps-tests)
 
 # Read-only SteamVR state probe used to study passthrough and scene signals.
 # Development only; not part of the release bundle.

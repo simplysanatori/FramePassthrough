@@ -22,6 +22,9 @@ struct Config {
     std::uint32_t poll_interval_ms = 20;
     std::uint32_t debounce_ms = 250;
     RgbConfig rgb;
+    // Which signal decides that passthrough is visible: auto, events,
+    // steamvr_log, or off (never gate on passthrough).
+    std::string passthrough_signal = "auto";
 };
 
 Config parse_config(const std::string& json_text);

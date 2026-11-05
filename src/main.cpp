@@ -1,5 +1,7 @@
 #include "config.hpp"
 #include "controller.hpp"
+#include "gate.hpp"
+#include "passthrough_state.hpp"
 #include "openvr_camera_source.hpp"
 #include <openvr.h>
 #include <json.hpp>
@@ -63,6 +65,20 @@ fs::path config_home() {
     return fs::path(base) / ".config";
 }
 fs::path app_directory() { return config_home() / "frame-passthrough-shortcuts"; }
+
+fs::path steamvr_server_log() {
+    const auto home = std::getenv("HOME");
+    const fs::path base = home && *home ? fs::path(home) : fs::path("/");
+    std::error_code error;
+    const auto root = fs::canonical(base / ".steam/root", error);
+    const auto logs = !error && fs::is_directory(root / "logs") ? root / "logs" : base / ".local/share/Steam/logs";
+    return logs / "vrserver.txt";
+}
+
+uint64_t monotonic_ms() {
+    return static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::steady_clock::now().time_since_epoch()).count());
+}
 
 void write_file(const fs::path& path, const std::string& contents) {
     fs::create_directories(path.parent_path());
@@ -246,6 +262,11 @@ int run(const fs::path& binary, const fs::path& assets, const fs::path& config_p
             log(std::string("Camera source control is not ready: ") + error.what() + ". Actions will retry.");
         }
     }
+    // Gestures act only while passthrough is visible. See passthrough_state.hpp
+    // for the signals; the decision itself is the pure fps::InputGate.
+    fps::PassthroughState passthrough(*fps::parse_passthrough_signal(config.passthrough_signal), steamvr_server_log());
+    fps::InputGate gate;
+    std::string gate_detail;
     vr::VRActiveActionSet_t active{};
     active.ulActionSet = action_set;
     active.nPriority = vr::k_nActionSetOverlayGlobalPriorityMax;
@@ -276,6 +297,21 @@ int run(const fs::path& binary, const fs::path& assets, const fs::path& config_p
             if (event.eventType == vr::VREvent_Input_BindingLoadFailed &&
                 static_cast<uint32_t>(event.data.inputBinding.ulAppContainer & 0xffffffffu) == static_cast<uint32_t>(getpid()))
                 log("SteamVR could not load the selected bindings. Select a new binding in SteamVR.");
+            if (event.eventType == vr::VREvent_RoomViewShown) passthrough.on_room_view_event(true);
+            if (event.eventType == vr::VREvent_RoomViewHidden) passthrough.on_room_view_event(false);
+        }
+        passthrough.poll();
+        {
+            fps::GateInputs inputs;
+            inputs.passthrough = passthrough.visibility();
+            const bool was_open = gate.open();
+            if (gate.update(inputs, monotonic_ms())) {
+                log(std::string("Shortcuts ") + (gate.open() ? "enabled" : "disabled") + ": " +
+                    fps::to_string(gate.reason()) + " (" + passthrough.detail() + ")");
+                if (was_open && !gate.open())
+                    for (auto& press : gates) press.reset();
+            }
+            gate_detail = passthrough.detail();
         }
         const bool removed_from_steamvr = !vr::VRApplications()->IsApplicationInstalled(app_key);
         const bool install_files_missing = !fs::exists(binary);
@@ -311,7 +347,7 @@ int run(const fs::path& binary, const fs::path& assets, const fs::path& config_p
         bool read_failed = false;
         json input_active = json::object();
         const auto now = std::chrono::steady_clock::now();
-        const auto ms = static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count());
+        const auto ms = monotonic_ms();
         for (size_t i = 0; i < handles.size(); ++i) {
             vr::InputDigitalActionData_t data{};
             const auto error = vr::VRInput()->GetDigitalActionData(handles[i], &data, sizeof(data), vr::k_ulInvalidInputValueHandle);
@@ -330,6 +366,10 @@ int run(const fs::path& binary, const fs::path& assets, const fs::path& config_p
             if (data.bActive && data.bState && data.bChanged)
                 log(std::string("Input press: ") + action_names[i]);
             if (gates[i].update(data.bActive, data.bState, data.bChanged, ms)) {
+                if (!gate.open()) {
+                    log(std::string("Ignored ") + action_names[i] + ": " + fps::to_string(gate.reason()));
+                    continue;
+                }
                 try { log(controls.apply(action_kinds[i])); save_camera_preference(controls); }
                 catch (const std::exception& e) { log(std::string("Action failed: ") + e.what()); }
             }
@@ -344,6 +384,8 @@ int run(const fs::path& binary, const fs::path& assets, const fs::path& config_p
             camera_error = error.what();
         }
         if (controls.preferred_rgb()) status["preferred_rgb"] = *controls.preferred_rgb();
+        status["gate"] = {{"open", gate.open()}, {"reason", fps::to_string(gate.reason())},
+            {"passthrough", fps::to_string(passthrough.visibility())}, {"signal", gate_detail}};
         if (status != last_status) {
             log(std::string("Input state: ") + status.dump());
             write_file(app_directory() / "runtime.json", status.dump()); last_status = std::move(status);
