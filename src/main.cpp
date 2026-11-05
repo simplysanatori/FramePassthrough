@@ -415,6 +415,7 @@ int run(const fs::path& binary, const fs::path& assets, const fs::path& config_p
     auto open_ms = uint64_t{0};
     log("Ready as VRApplication_Overlay. No overlay surface is created or rendered.");
     bool warned_inactive = false;
+    bool ever_active = false;
     std::string camera_error;
     std::string input_error;
     json last_status;
@@ -548,7 +549,10 @@ int run(const fs::path& binary, const fs::path& assets, const fs::path& config_p
                 // Deactivate our action set so SteamVR stops evaluating our
                 // bindings; an update with no sets leaves none of ours active.
                 const auto error = vr::VRInput()->UpdateActionState(&active, sizeof(active), 0);
-                const auto message = error == vr::VRInputError_None ? std::string()
+                // SteamVR answers an empty update with NoActiveActionSet (8);
+                // that is the expected result of releasing the set.
+                const bool released = error == vr::VRInputError_None || error == vr::VRInputError_NoActiveActionSet;
+                const auto message = released ? std::string()
                     : "SteamVR rejected the action set release, error " + std::to_string(error);
                 if (!message.empty() && message != release_error) log(message);
                 release_error = message;
@@ -617,7 +621,10 @@ int run(const fs::path& binary, const fs::path& assets, const fs::path& config_p
         }
         // Our actions can only be active while our set is; judge the
         // bindings only after the set has been active for a while.
-        if (gate.open() && !any_active && !warned_inactive && now - started > std::chrono::seconds(30) && ms - open_ms > 5000) {
+        ever_active |= any_active;
+        // Actions also go inactive while the dashboard has input focus, so
+        // only warn when none has ever been active.
+        if (gate.open() && !ever_active && !warned_inactive && now - started > std::chrono::seconds(30) && ms - open_ms > 5000) {
             log("No active bindings. Choose Frame Passthrough Shortcuts in SteamVR controller bindings.");
             warned_inactive = true;
         }

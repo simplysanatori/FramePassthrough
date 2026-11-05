@@ -82,6 +82,11 @@ void PassthroughState::on_room_view_event(bool shown) {
     from_events_ = {shown ? Visibility::Visible : Visibility::Hidden, ++sequence_};
 }
 
+void PassthroughState::set_scene_app_running(bool running) {
+    if (running && !scene_running_) from_scene_start_ = {Visibility::Hidden, ++sequence_};
+    scene_running_ = running;
+}
+
 void PassthroughState::on_construct_setting(bool enabled) {
     const auto value = enabled ? Visibility::Visible : Visibility::Hidden;
     if (from_setting_.value != value) from_setting_ = {value, ++sequence_};
@@ -104,10 +109,16 @@ Visibility PassthroughState::visibility() const {
     case PassthroughSignal::Setting: return from_setting_.value;
     case PassthroughSignal::SteamVrLog: return from_log_.value;
     case PassthroughSignal::Auto:
+    {
         if (!scene_running_) return from_setting_.value;
-        if (from_events_.value == Visibility::Unknown) return from_log_.value;
-        if (from_log_.value == Visibility::Unknown) return from_events_.value;
-        return from_events_.sequence > from_log_.sequence ? from_events_.value : from_log_.value;
+        // In a scene app the newest of: RoomViewShown / Hidden, the logged
+        // XRService mode (which alone reports Room View opened from the
+        // dashboard), and the scene app's start.
+        const Observation* newest = &from_scene_start_;
+        for (const auto* candidate : {&from_events_, &from_log_})
+            if (candidate->value != Visibility::Unknown && candidate->sequence > newest->sequence) newest = candidate;
+        return newest->value;
+    }
     }
     return Visibility::Unknown;
 }

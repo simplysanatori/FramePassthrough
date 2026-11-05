@@ -233,9 +233,13 @@ void test_passthrough_state() {
         CHECK(state.visibility() == (on ? Visibility::Visible : Visibility::Hidden));
     }
 
-    // A scene app runs: newest of RoomView events and the XRService mode.
+    // A scene app starts: hidden until an event or a logged mode says
+    // otherwise, even though older observations said visible.
     state.set_scene_app_running(true);
-    CHECK(state.visibility() == Visibility::Visible); // newest: the event above
+    CHECK(state.visibility() == Visibility::Hidden);
+    append(file, block(6));
+    state.poll();
+    CHECK(state.visibility() == Visibility::Visible);
     append(file, block(0));
     state.poll();
     CHECK(state.visibility() == Visibility::Hidden);
@@ -254,10 +258,19 @@ void test_passthrough_state() {
     scene_log_only.set_scene_app_running(true);
     scene_log_only.poll();
     CHECK(scene_log_only.visibility() == Visibility::Hidden); // newest logged mode is 0
-    PassthroughState scene_unknown(PassthroughSignal::Auto, dir.path / "absent.txt");
-    scene_unknown.set_scene_app_running(true);
-    scene_unknown.poll();
-    CHECK(scene_unknown.visibility() == Visibility::Unknown); // fails open
+    PassthroughState scene_no_log(PassthroughSignal::Auto, dir.path / "absent.txt");
+    scene_no_log.set_scene_app_running(true);
+    scene_no_log.poll();
+    CHECK(scene_no_log.visibility() == Visibility::Hidden);
+    scene_no_log.on_room_view_event(true);
+    CHECK(scene_no_log.visibility() == Visibility::Visible);
+
+    // The app starting while a game already runs: the logged history is
+    // newer than the scene start and decides.
+    PassthroughState late(PassthroughSignal::Auto, file); // newest logged mode is 0
+    late.set_scene_app_running(true);
+    late.poll();
+    CHECK(late.visibility() == Visibility::Hidden);
 
     PassthroughState setting(PassthroughSignal::Setting, file);
     setting.set_scene_app_running(true);
@@ -279,6 +292,46 @@ void test_passthrough_state() {
 
     PassthroughState off(PassthroughSignal::Off, file);
     CHECK(off.visibility() == Visibility::Visible);
+}
+
+// Replays the in-game probe session of 2026-11-05 11:26:47-11:27:30 (OpenFrame).
+void test_in_game_replay() {
+    TempDir dir;
+    const auto file = dir.path / "vrserver.txt";
+    append(file, block(6)); // home view with passthrough showing
+    PassthroughState state(PassthroughSignal::Auto, file);
+    state.on_construct_setting(true);
+    state.poll();
+    CHECK(state.visibility() == Visibility::Visible);
+    struct Step { char kind; int value; Visibility expect; const char* when; };
+    // kind: s = scene app start / stop, e = RoomView event, m = logged mode
+    const Step steps[] = {
+        {'s', 1, Visibility::Hidden, "11:26:47.41 game starts"},
+        {'m', 0, Visibility::Hidden, "11:26:54.98 mode 0"},
+        {'e', 1, Visibility::Visible, "11:26:56.29 RoomViewShown"},
+        {'m', 6, Visibility::Visible, "11:26:56.33 mode 6"},
+        {'e', 0, Visibility::Hidden, "11:26:59.07 RoomViewHidden"},
+        {'m', 0, Visibility::Hidden, "11:26:59.30 mode 0"},
+        {'e', 1, Visibility::Visible, "11:27:00.53 RoomViewShown"},
+        {'m', 6, Visibility::Visible, "11:27:00.55 mode 6"},
+        {'e', 0, Visibility::Hidden, "11:27:09.92 RoomViewHidden"},
+        {'m', 0, Visibility::Hidden, "11:27:10.16 mode 0"},
+        {'e', 1, Visibility::Visible, "11:27:10.94 RoomViewShown"},
+        {'m', 6, Visibility::Visible, "11:27:10.96 mode 6"},
+        {'e', 0, Visibility::Hidden, "11:27:12.13 RoomViewHidden"},
+        {'m', 0, Visibility::Hidden, "11:27:12.33 mode 0"},
+        {'m', 6, Visibility::Visible, "11:27:16.30 mode 6, no event"},
+        {'m', 0, Visibility::Hidden, "11:27:17.41 mode 0, no event"},
+        {'m', 6, Visibility::Visible, "11:27:24.59 mode 6, no event"},
+        {'s', 0, Visibility::Visible, "11:27:30.25 game quits, setting visible"},
+    };
+    for (const auto& step : steps) {
+        if (step.kind == 's') state.set_scene_app_running(step.value != 0);
+        if (step.kind == 'e') state.on_room_view_event(step.value != 0);
+        if (step.kind == 'm') { append(file, block(step.value)); state.poll(); }
+        if (state.visibility() != step.expect) std::cerr << "  at " << step.when << "\n";
+        CHECK(state.visibility() == step.expect);
+    }
 }
 
 void test_scene_classification() {
@@ -335,6 +388,7 @@ int main() {
         {"parse_rendering_mode", test_parse_rendering_mode},
         {"log_follower", test_log_follower},
         {"passthrough_state", test_passthrough_state},
+        {"in_game_replay", test_in_game_replay},
         {"scene_classification", test_scene_classification},
         {"config", test_config},
         {"set_config_option", test_set_config_option},

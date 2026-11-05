@@ -69,7 +69,11 @@ public:
     // Current value of camera.enableConstructRoomView.
     void on_construct_setting(bool enabled);
     // Whether SteamVR has a scene application (any process, game or home).
-    void set_scene_app_running(bool running) { scene_running_ = running; }
+    // A scene app starting hides Room View (the compositor drops
+    // RoomViewFullyOccludingApp within about a second, while XRService may
+    // log mode 0 only seconds later), so its start counts as "hidden" until
+    // an event or a logged mode says otherwise.
+    void set_scene_app_running(bool running);
     // Read new SteamVR log lines. Cheap when nothing changed (one stat).
     void poll();
 
@@ -87,6 +91,7 @@ private:
     Observation from_events_;
     Observation from_log_;
     Observation from_setting_;
+    Observation from_scene_start_;
     bool scene_running_ = false;
     int last_mode_ = -1;
     std::uint64_t sequence_ = 0;
