@@ -15,6 +15,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <optional>
 #include <sstream>
 #include <stdexcept>
 #include <string>
@@ -68,13 +69,36 @@ fs::path config_home() {
 }
 fs::path app_directory() { return config_home() / "frame-passthrough-shortcuts"; }
 
+// SteamVR's own record of where its config and logs live.
+std::optional<fs::path> openvr_path(const char* kind) {
+    try {
+        std::ifstream stream(config_home() / "openvr" / "openvrpaths.vrpath");
+        json paths;
+        if (!stream || !(stream >> paths) || !paths.contains(kind) || !paths.at(kind).is_array() || paths.at(kind).empty())
+            return std::nullopt;
+        const auto first = fs::u8path(paths.at(kind).at(0).get<std::string>());
+        if (first.is_absolute()) return first;
+    } catch (const std::exception&) {}
+    return std::nullopt;
+}
+
 fs::path steamvr_server_log() {
+    if (const auto logs = openvr_path("log")) return *logs / "vrserver.txt";
     const auto home = std::getenv("HOME");
     const fs::path base = home && *home ? fs::path(home) : fs::path("/");
+    return base / ".local/share/Steam/logs/vrserver.txt";
+}
+
+bool steamvr_server_running() {
     std::error_code error;
-    const auto root = fs::canonical(base / ".steam/root", error);
-    const auto logs = !error && fs::is_directory(root / "logs") ? root / "logs" : base / ".local/share/Steam/logs";
-    return logs / "vrserver.txt";
+    for (fs::directory_iterator it("/proc", error), end; !error && it != end; it.increment(error)) {
+        const auto name = it->path().filename().string();
+        if (name.empty() || name.find_first_not_of("0123456789") != std::string::npos) continue;
+        std::error_code link_error;
+        const auto exe = fs::read_symlink(it->path() / "exe", link_error);
+        if (!link_error && exe.filename() == "vrserver") return true;
+    }
+    return false;
 }
 
 // Detects edits to config.json (mtime, size or inode) so options apply
@@ -203,6 +227,51 @@ public:
 void cleanup_removed_install(const fs::path& binary);
 void remove_openvr_user_state();
 
+json read_json_or(const fs::path& path, json fallback) {
+    std::ifstream stream(path);
+    if (!stream) return fallback;
+    json value;
+    if (!(stream >> value) || !value.is_object())
+        throw std::runtime_error("Cannot parse " + path.string() + "; not changing it");
+    return value;
+}
+
+void write_json_atomic(const fs::path& path, const json& value) {
+    const auto temporary = path.string() + ".frame-passthrough.tmp";
+    write_file(temporary, value.dump(3) + "\n");
+    fs::rename(temporary, path);
+}
+
+// SteamVR is not running: put the app where SteamVR looks at its next start
+// (appconfig.json manifest list, vrappconfig autolaunch). Only ever called
+// when no vrserver process exists, so SteamVR cannot overwrite these files.
+void register_offline(const fs::path& manifest, bool install) {
+    const auto config = openvr_path("config");
+    if (!config) throw std::runtime_error("SteamVR has never run for this user (no openvrpaths.vrpath); start SteamVR once, then install again");
+    const auto appconfig_path = *config / "appconfig.json";
+    auto appconfig = read_json_or(appconfig_path, json::object());
+    auto paths = appconfig.value("manifest_paths", json::array());
+    const auto entry = manifest.generic_u8string();
+    json kept = json::array();
+    for (const auto& path : paths) if (!path.is_string() || path.get<std::string>() != entry) kept.push_back(path);
+    if (install) kept.push_back(entry);
+    if (kept != paths || install != appconfig.contains("manifest_paths")) {
+        appconfig["manifest_paths"] = kept;
+        fs::create_directories(appconfig_path.parent_path());
+        write_json_atomic(appconfig_path, appconfig);
+    }
+    const auto appsettings = *config / "vrappconfig" / (std::string(app_key) + ".vrappconfig");
+    if (install) {
+        auto settings = read_json_or(appsettings, json::object());
+        settings["autolaunch"] = true;
+        fs::create_directories(appsettings.parent_path());
+        write_json_atomic(appsettings, settings);
+    } else {
+        std::error_code error;
+        fs::remove(appsettings, error);
+    }
+}
+
 void check_app(vr::EVRApplicationError error, const char* action) {
     if (error != vr::VRApplicationError_None)
         throw std::runtime_error(std::string(action) + ": " + vr::VRApplications()->GetApplicationsErrorNameFromEnum(error));
@@ -211,7 +280,7 @@ void check_input(vr::EVRInputError error, const char* action) {
     if (error != vr::VRInputError_None)
         throw std::runtime_error(std::string(action) + " failed, SteamVR input error " + std::to_string(error));
 }
-void register_app(const fs::path& binary, const fs::path& assets, const fs::path& config, bool attach = true) {
+fs::path write_manifest(const fs::path& binary, const fs::path& assets, const fs::path& config) {
     // Frame's manifest argument parser keeps quote characters literally. Store
     // the selected path in JSON so spaces and quotes never cross that parser.
     write_file(app_directory() / "launch.json", json{{"config", config.generic_u8string()}}.dump(2));
@@ -229,9 +298,14 @@ void register_app(const fs::path& binary, const fs::path& assets, const fs::path
     app["binary_path_linux"] = binary.generic_u8string();
     // Frame's native ARM runtime selects this key, not binary_path_linux.
     app["binary_path_linux_arm"] = binary.generic_u8string();
-    const auto pid = static_cast<uint32_t>(getpid());
     const auto manifest = app_directory() / "app.vrmanifest";
     write_file(manifest, json{{"source", "builtin"}, {"applications", json::array({app})}}.dump(2));
+    return manifest;
+}
+
+void register_app(const fs::path& binary, const fs::path& assets, const fs::path& config, bool attach = true) {
+    const auto pid = static_cast<uint32_t>(getpid());
+    const auto manifest = write_manifest(binary, assets, config);
     check_app(vr::VRApplications()->AddApplicationManifest(manifest.u8string().c_str(), false), "Register application");
     if (!attach) return;
     std::array<char, vr::k_unMaxApplicationKeyLength> existing_key{};
@@ -602,9 +676,13 @@ void cleanup_removed_install(const fs::path& binary) {
         fs::remove(devkit_root / (std::string(devkit_game_id) + suffix), sidecar_error);
         if (sidecar_error) throw std::runtime_error("Cannot remove Devkit Game metadata: " + sidecar_error.message());
     }
+    // Keep the user's preferences (camera-preference.json) and the log so a
+    // reinstall carries them over; remove only what describes this install.
     std::error_code error;
-    fs::remove_all(app_directory(), error);
-    if (error) throw std::runtime_error("Cannot remove Frame Passthrough Shortcuts settings: " + error.message());
+    for (const auto* name : {"app.vrmanifest", "launch.json", "runtime.json", "camera-preference.pending.json"}) {
+        fs::remove(app_directory() / name, error);
+        if (error) throw std::runtime_error("Cannot remove Frame Passthrough Shortcuts state: " + error.message());
+    }
     const auto managed = managed_install_directory();
     std::error_code parent_error, expected_error;
     const auto parent = fs::weakly_canonical(binary.parent_path(), parent_error);
@@ -613,7 +691,7 @@ void cleanup_removed_install(const fs::path& binary) {
         fs::remove_all(managed, error);
         if (error) throw std::runtime_error("Cannot remove Frame Passthrough Shortcuts files: " + error.message());
     }
-    log("Removed SteamVR registration, autostart, Devkit shortcut, and application files.");
+    log("Removed SteamVR registration and autostart. Preferences in " + app_directory().string() + " were kept.");
 }
 
 void remove_openvr_user_state() {
@@ -622,18 +700,8 @@ void remove_openvr_user_state() {
     fs::remove(openvr_config / "vrappconfig" / "local.frame.passthrough.shortcuts.vrappconfig", error);
     if (error) throw std::runtime_error("Cannot remove SteamVR app settings: " + error.message());
 
-    const auto settings_path = openvr_config / "steamvr.vrsettings";
-    if (fs::exists(settings_path)) {
-        std::ifstream input(settings_path);
-        json settings;
-        if (!input || !(input >> settings) || !settings.is_object())
-            throw std::runtime_error("Cannot parse SteamVR settings while removing this app's binding state");
-        if (settings.erase(app_key) != 0) {
-            const auto temporary = settings_path.string() + ".frame-passthrough-shortcuts.tmp";
-            write_file(temporary, settings.dump(3) + "\n");
-            fs::rename(temporary, settings_path);
-        }
-    }
+    // steamvr.vrsettings is owned by the running vrserver and may hold the
+    // user's binding choice, so it is left alone (0.1.x rewrote it here).
 
     const auto home = std::getenv("HOME");
     if (!home || !*home) throw std::runtime_error("HOME is unavailable");
@@ -715,10 +783,10 @@ void help() {
         "Steam Frame RGB / monochrome camera selection.\n\n"
         "Default: Register and start SteamVR autolaunch.\n"
         "  --run                 Run an overlay application without creating an overlay surface\n"
-        "  --install             Enable SteamVR autostart and launch shortcuts\n"
+        "  --install             Enable SteamVR autostart and launch shortcuts (works offline)\n"
         "  --stop                Stop shortcuts for diagnostics; retain autostart\n"
         "  --status              Report registration, autostart and running PID as JSON\n"
-        "  --uninstall           Remove SteamVR registration, shortcut, files, and settings\n"
+        "  --uninstall           Remove SteamVR registration and autostart; keep preferences\n"
         "  --doctor              Read runtime settings and report support; no setting changes\n"
         "  --self-test           Test style changes, then restore the original style\n"
         "  --bindings            Open bindings (use --stop first)\n"
@@ -793,6 +861,17 @@ int main(int argc, char** argv) {
             return 0;
         }
         if (command == "--uninstall") {
+            if (!steamvr_server_running()) {
+                // Without SteamVR there is no registered process to stop and
+                // no API to call; undo the offline registration instead.
+                register_offline(app_directory() / "app.vrmanifest", false);
+                std::error_code error;
+                for (const auto* name : {"app.vrmanifest", "launch.json", "runtime.json"})
+                    fs::remove(app_directory() / name, error);
+                log("SteamVR is not running. Removed this app from SteamVR's app list and autostart. Preferences in " +
+                    app_directory().string() + " were kept.");
+                return 0;
+            }
             VrSession session(false, true);
             stop_registered_application();
             cleanup_removed_install(binary);
@@ -860,6 +939,11 @@ int main(int argc, char** argv) {
         }
         if (command == "--install") {
             remove_legacy_service();
+            if (!steamvr_server_running()) {
+                register_offline(write_manifest(binary, assets, config_path), true);
+                log("SteamVR is not running. Registered for SteamVR overlay autostart; the shortcuts start with SteamVR next time.");
+                return 0;
+            }
             VrSession session(false, true);
             register_app(binary, assets, config_path, false);
             check_app(vr::VRApplications()->SetApplicationAutoLaunch(app_key, true), "Enable SteamVR autostart");
