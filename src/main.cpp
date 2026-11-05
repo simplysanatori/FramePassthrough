@@ -145,6 +145,9 @@ void register_app(const fs::path& binary, const fs::path& assets, const fs::path
     json app = {
         {"app_key", app_key}, {"launch_type", "binary"},
         {"is_dashboard_overlay", true},
+        // Keep SteamVR from mirroring this background helper into the Steam
+        // library as a launchable title.
+        {"is_internal", true},
         {"action_manifest_path", (assets / "actions.json").generic_u8string()},
         {"arguments", "--run --registered-config"},
         {"strings", {{"en_us", {{"name", "Frame Passthrough Shortcuts"},
