@@ -55,7 +55,7 @@ void append(const fs::path& file, const std::string& text) {
     out << text;
 }
 
-GateInputs inputs(Visibility v, bool game = false, bool disable_in_game = false) {
+GateInputs inputs(Visibility v, bool game = false, bool disable_in_game = true) {
     GateInputs in;
     in.passthrough = v;
     in.game_running = game;
@@ -120,7 +120,7 @@ void test_gate_mid_gesture_guard() {
 
 void test_gate_game_mode() {
     InputGate gate;
-    // Default: option off, a running game does not matter.
+    // Option set to false: a running game does not matter.
     gate.update(inputs(Visibility::Visible, true, false), 0);
     CHECK(gate.open());
     // Option on and a game running: closed even with passthrough visible.
@@ -354,8 +354,11 @@ void test_config() {
     // The 0.1.x config files keep working.
     const auto old = parse_config("{\n  \"poll_interval_ms\": 20,\n  \"debounce_ms\": 250\n}\n");
     CHECK(old.poll_interval_ms == 20 && old.debounce_ms == 250);
+    CHECK(old.disable_while_game_running); // an older file without the key gets the default
     CHECK(throws([] { parse_config("{\"unknown\": 1}"); }));
-    CHECK(!parse_config("{}").disable_while_game_running);
+    CHECK(parse_config("{}").disable_while_game_running); // default on
+    CHECK(!parse_config("{\"disable_while_game_running\": false}").disable_while_game_running);
+    CHECK(GateInputs{}.disable_while_game_running);
     CHECK(parse_config("{\"disable_while_game_running\": true}").disable_while_game_running);
     CHECK(throws([] { parse_config("{\"disable_while_game_running\": \"yes\"}"); }));
 }
