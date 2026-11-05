@@ -2,87 +2,91 @@
 
 Passthrough shortcuts on the Steam Frame's thumbsticks. A fork of KominoVR's [Frame Passthrough Shortcuts](https://github.com/KominoVR/frame-passthrough-shortcuts) 0.1.1.
 
-I forked it because the original reacts to the stick gestures all the time, during games too. A game's own thumbstick hold or double-press switches passthrough by accident. FramePassthrough only reacts while passthrough is showing, in Home or in a SteamVR or OpenXR game. With passthrough off, a game's stick controls never trigger it.
+## Features
 
-I also restored the colour / mono camera switch that the original removed in 0.1.1.
+- Double-press a stick for translucent / opaque passthrough
+- Hold a stick for colour / mono cameras
+- Only reacts while passthrough is showing
+- Remembers your camera choice
+- Nothing added to your Steam library
 
-## Status
+## How it works
 
-Version 0.2.0. It runs on my Steam Frame.
-
-Known issues:
-
-- The gestures need the SteamVR dashboard closed.
-- With passthrough open in a game, the game also gets the stick clicks. SteamVR does that for every overlay app.
-- The camera switch uses SteamVR's internal camera controls. A SteamVR update can change them.
-- Choosing the mono cameras does not power off the RGB camera.
+It runs on the Frame itself, in the background, and starts with SteamVR. It listens for your thumbstick clicks through SteamVR. Then it asks SteamVR to switch the passthrough style or camera.
 
 ## Requirements
 
-- A Steam Frame with SteamVR, run at least once.
-- The Arcturus RGB camera, for the colour camera. Without it the double-press still works.
+- A Steam Frame with SteamVR, run at least once
+- The Arcturus RGB camera, for the colour camera (double-press works without it)
 
 ## Install
 
-**With [Frametanium](https://github.com/Cogential/frametanium).** Add `simplysanatori/FramePassthrough`. It installs and updates the app.
+1. Download `framepassthrough-0.2.0-linux-arm64.tar.gz` from [Releases](https://github.com/simplysanatori/FramePassthrough/releases).
+2. Unpack and install it:
 
-**By hand.** Download `framepassthrough-0.2.0-linux-arm64.tar.gz` from [Releases](https://github.com/simplysanatori/FramePassthrough/releases), then:
+   ```sh
+   mkdir fp && tar -xzf framepassthrough-0.2.0-linux-arm64.tar.gz -C fp
+   ./fp/install.sh
+   ```
 
-```sh
-mkdir fp && tar -xzf framepassthrough-0.2.0-linux-arm64.tar.gz -C fp
-./fp/install.sh
-```
+With [Frametanium](https://github.com/Cogential/frametanium): add `simplysanatori/FramePassthrough`. It also updates the app.
 
-It installs to `~/.local/share/FramePassthrough/app` and starts with SteamVR. It shows no window and adds nothing to your Steam library.
-
-If you have the original, install over it. Your camera choice, bindings and autostart are kept. Then remove the original's entry from your library, because launching it registers the original again.
-
-To remove: `~/.local/share/FramePassthrough/app/uninstall.sh`.
+Have the original? Install over it, then remove its Steam library entry.
 
 ## Controls
 
-Whenever passthrough is showing (side button or Steam button), in Home or in a game, with the dashboard closed, on either thumbstick:
+With passthrough showing (side button or Steam button) and the dashboard closed, on either thumbstick:
 
 | Stick click | Action |
 | --- | --- |
 | Double-press | Translucent / opaque passthrough |
-| Hold for one second | Colour / mono cameras. The choice is saved |
+| Hold for one second | Colour / mono cameras |
 
 Remap them in **SteamVR controller bindings → Frame Passthrough Shortcuts**.
 
-## Settings
+## Uninstall
 
-`~/.local/share/FramePassthrough/app/config.json`, reloaded within a second of an edit.
+```sh
+~/.local/share/FramePassthrough/app/uninstall.sh
+```
 
-`disable_while_game_running` is `false` by default. Set it to `true`, or run `frame-passthrough-shortcuts --set disable-while-game-running on`, to turn the gestures off in games even with passthrough open.
+## Troubleshooting
 
-The other keys, the command line and the file locations are in [docs/TECHNICAL.md](docs/TECHNICAL.md).
+- Gestures do nothing: open passthrough and close the SteamVR dashboard.
+- Still nothing: choose the **Frame Passthrough Shortcuts** binding in SteamVR controller bindings.
+- Gestures act in games with passthrough open: run `~/.local/share/FramePassthrough/app/frame-passthrough-shortcuts --set disable-while-game-running on`.
+- Hold does nothing: you need the Arcturus RGB camera.
+
+More fixes: [docs/TECHNICAL.md](docs/TECHNICAL.md#troubleshooting).
 
 ## Reporting a problem
 
-Open an [issue](https://github.com/simplysanatori/FramePassthrough/issues) with what you did and what happened. Attach `~/.config/frame-passthrough-shortcuts/application.log`. It contains your user name in paths, so read it first.
+Open an [issue](https://github.com/simplysanatori/FramePassthrough/issues) saying what you did and what happened. Attach `~/.config/frame-passthrough-shortcuts/application.log`. It contains your user name. Read it before sharing.
 
-## Build from source
+## More
 
-On the Frame: `scripts/make-release.sh`. It builds, runs the tests and writes the release tarball to `dist/`. See [docs/TECHNICAL.md](docs/TECHNICAL.md).
+- [Settings, command line and files](docs/TECHNICAL.md)
+- [AGENTS.md](AGENTS.md): for developers and AI agents
+- [Building from source](docs/TECHNICAL.md#building)
+- [Changelog](CHANGELOG.md)
 
 ## Support
 
-FramePassthrough exists because of KominoVR's [Frame Passthrough Shortcuts](https://github.com/KominoVR/frame-passthrough-shortcuts). If you want to support someone, support them first: star and follow it, report what you find there, and send improvements upstream.
+Support KominoVR's [Frame Passthrough Shortcuts](https://github.com/KominoVR/frame-passthrough-shortcuts) first: star and follow it, report bugs there, send improvements upstream.
 
-If you would like more Steam Frame ports, you can also [buy me a coffee](https://ko-fi.com/sana748653). It pays for the Claude API credits these ports are built with, spent as carefully as I can.
+For more Steam Frame ports, you can [buy me a coffee](https://ko-fi.com/sana748653). It pays for the Claude API credits.
 
 ## Credits
 
-- [Frame Passthrough Shortcuts](https://github.com/KominoVR/frame-passthrough-shortcuts) by [KominoVR](https://github.com/KominoVR), the original app this is built on.
-- Fork by [simplysanatori](https://github.com/simplysanatori).
-- Valve's [OpenVR SDK](https://github.com/ValveSoftware/openvr) and Niels Lohmann's [JSON for Modern C++](https://github.com/nlohmann/json). The full list is in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+- [Frame Passthrough Shortcuts](https://github.com/KominoVR/frame-passthrough-shortcuts) by [KominoVR](https://github.com/KominoVR): the original app
+- Fork by [simplysanatori](https://github.com/simplysanatori)
+- Valve's [OpenVR SDK](https://github.com/ValveSoftware/openvr) and Niels Lohmann's [JSON for Modern C++](https://github.com/nlohmann/json); full list in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)
 
-This is an unofficial project, not affiliated with Valve or the upstream author.
+Unofficial, not affiliated with Valve or the upstream author.
 
 ## Licence
 
-MIT, same as upstream. See [LICENSE](LICENSE). Upstream's README is kept as [docs/UPSTREAM-README.md](docs/UPSTREAM-README.md).
+MIT, same as upstream. See [LICENSE](LICENSE).
 
 ## How this was made
 
