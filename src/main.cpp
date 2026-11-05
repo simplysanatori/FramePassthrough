@@ -202,6 +202,10 @@ void register_app(const fs::path& binary, const fs::path& assets, const fs::path
 constexpr std::array<const char*, 6> action_names = {"toggle_style", "translucent", "opaque", "toggle_rgb", "rgb", "monochrome"};
 constexpr std::array<fps::Action, 6> action_kinds = {fps::Action::ToggleStyle, fps::Action::Translucent, fps::Action::Opaque,
     fps::Action::ToggleRgb, fps::Action::Rgb, fps::Action::Monochrome};
+// Default bindings: style actions on a double press, camera actions on a
+// one-second hold. Used to size the guard after the gate opens.
+constexpr std::array<fps::GestureKind, 6> action_gestures = {fps::GestureKind::DoublePress, fps::GestureKind::DoublePress,
+    fps::GestureKind::DoublePress, fps::GestureKind::Hold, fps::GestureKind::Hold, fps::GestureKind::Hold};
 
 fps::Action parse_action(std::string name) {
     for (auto& c : name) if (c == '-') c = '_';
@@ -265,15 +269,23 @@ int run(const fs::path& binary, const fs::path& assets, const fs::path& config_p
     // Gestures act only while passthrough is visible. See passthrough_state.hpp
     // for the signals; the decision itself is the pure fps::InputGate.
     fps::PassthroughState passthrough(*fps::parse_passthrough_signal(config.passthrough_signal), steamvr_server_log());
-    fps::InputGate gate;
+    fps::GateTimings timings;
+    timings.double_press_guard_ms = std::max<uint32_t>(config.debounce_ms, 250);
+    fps::InputGate gate(timings);
     std::string gate_detail;
     vr::VRActiveActionSet_t active{};
     active.ulActionSet = action_set;
+    // The action set is only activated while the gate is open; while it is
+    // closed UpdateActionState gets no sets, so the stick clicks belong to
+    // the game and the dashboard alone. The overlay priority only has an
+    // effect when SteamVR's experimental steamvr.globalActionSetPriority
+    // setting is on (off by default); even then it cannot beat dashboard
+    // input focus.
     active.nPriority = vr::k_nActionSetOverlayGlobalPriorityMax;
-    // Respect the user's global-input setting. On the tested Frame runtime,
-    // even the highest public priority cannot override dashboard input focus.
+    bool set_active = false;
+    std::string release_error;
+    auto open_ms = uint64_t{0};
     log("Ready as VRApplication_Overlay. No overlay surface is created or rendered.");
-    log("Overlay input priority configured; SteamVR dashboard focus can still block actions.");
     bool warned_inactive = false;
     std::string camera_error;
     std::string input_error;
@@ -308,8 +320,7 @@ int run(const fs::path& binary, const fs::path& assets, const fs::path& config_p
             if (gate.update(inputs, monotonic_ms())) {
                 log(std::string("Shortcuts ") + (gate.open() ? "enabled" : "disabled") + ": " +
                     fps::to_string(gate.reason()) + " (" + passthrough.detail() + ")");
-                if (was_open && !gate.open())
-                    for (auto& press : gates) press.reset();
+                if (!was_open && gate.open()) open_ms = monotonic_ms();
             }
             gate_detail = passthrough.detail();
         }
@@ -334,49 +345,62 @@ int run(const fs::path& binary, const fs::path& assets, const fs::path& config_p
             if (camera_error != error.what()) log(std::string("Camera restoration deferred: ") + error.what());
             camera_error = error.what();
         }
-        const auto update_error = vr::VRInput()->UpdateActionState(&active, sizeof(active), 1);
-        if (update_error != vr::VRInputError_None) {
-            for (auto& gate : gates) gate.reset();
-            const auto message = "SteamVR input update deferred, error " + std::to_string(update_error);
-            if (input_error != message) log(message);
-            input_error = message;
-            std::this_thread::sleep_for(std::chrono::milliseconds(config.poll_interval_ms));
-            continue;
-        }
         bool any_active = false;
-        bool read_failed = false;
         json input_active = json::object();
         const auto now = std::chrono::steady_clock::now();
         const auto ms = monotonic_ms();
-        for (size_t i = 0; i < handles.size(); ++i) {
-            vr::InputDigitalActionData_t data{};
-            const auto error = vr::VRInput()->GetDigitalActionData(handles[i], &data, sizeof(data), vr::k_ulInvalidInputValueHandle);
-            if (error != vr::VRInputError_None) {
-                gates[i].reset();
-                read_failed = true;
-                const auto message = std::string("SteamVR action read deferred: ") + action_names[i] +
-                    ", error " + std::to_string(error);
-                if (input_error != message) log(message);
-                input_error = message;
-                input_active[action_names[i]] = false;
-                continue;
+        if (!gate.open()) {
+            if (set_active) {
+                // Deactivate our action set so SteamVR stops evaluating our
+                // bindings; an update with no sets leaves none of ours active.
+                const auto error = vr::VRInput()->UpdateActionState(&active, sizeof(active), 0);
+                const auto message = error == vr::VRInputError_None ? std::string()
+                    : "SteamVR rejected the action set release, error " + std::to_string(error);
+                if (!message.empty() && message != release_error) log(message);
+                release_error = message;
+                set_active = false;
             }
-            any_active |= data.bActive;
-            input_active[action_names[i]] = data.bActive;
-            if (data.bActive && data.bState && data.bChanged)
-                log(std::string("Input press: ") + action_names[i]);
-            if (gates[i].update(data.bActive, data.bState, data.bChanged, ms)) {
-                if (!gate.open()) {
-                    log(std::string("Ignored ") + action_names[i] + ": " + fps::to_string(gate.reason()));
+            for (auto& press : gates) press.reset();
+        } else if (const auto update_error = vr::VRInput()->UpdateActionState(&active, sizeof(active), 1);
+                   update_error != vr::VRInputError_None) {
+            set_active = false;
+            for (auto& press : gates) press.reset();
+            const auto message = "SteamVR input update deferred, error " + std::to_string(update_error);
+            if (input_error != message) log(message);
+            input_error = message;
+        } else {
+            set_active = true;
+            bool read_failed = false;
+            for (size_t i = 0; i < handles.size(); ++i) {
+                vr::InputDigitalActionData_t data{};
+                const auto error = vr::VRInput()->GetDigitalActionData(handles[i], &data, sizeof(data), vr::k_ulInvalidInputValueHandle);
+                if (error != vr::VRInputError_None) {
+                    gates[i].reset();
+                    read_failed = true;
+                    const auto message = std::string("SteamVR action read deferred: ") + action_names[i] +
+                        ", error " + std::to_string(error);
+                    if (input_error != message) log(message);
+                    input_error = message;
+                    input_active[action_names[i]] = false;
+                    continue;
+                }
+                any_active |= data.bActive;
+                input_active[action_names[i]] = data.bActive;
+                if (data.bActive && data.bState && data.bChanged)
+                    log(std::string("Input press: ") + action_names[i]);
+                if (!gates[i].update(data.bActive, data.bState, data.bChanged, ms)) continue;
+                if (!gate.accept(action_gestures[i], ms)) {
+                    log(std::string("Ignored ") + action_names[i] + ": the gesture began before shortcuts were enabled");
                     continue;
                 }
                 try { log(controls.apply(action_kinds[i])); save_camera_preference(controls); }
                 catch (const std::exception& e) { log(std::string("Action failed: ") + e.what()); }
             }
+            if (!read_failed) input_error.clear();
         }
-        if (!read_failed) input_error.clear();
         json status{{"pid", pid}, {"ready", true}, {"input_active", input_active},
-            {"dashboard_visible", vr::VROverlay()->IsDashboardVisible()}, {"input_priority", active.nPriority}};
+            {"dashboard_visible", vr::VROverlay()->IsDashboardVisible()},
+            {"input_priority", set_active ? active.nPriority : 0}};
         try { status["arcturus_rgb_camera_connected"] = camera.rgb_available(); }
         catch (const std::exception& error) {
             status["arcturus_rgb_camera_connected"] = nullptr;
@@ -390,7 +414,9 @@ int run(const fs::path& binary, const fs::path& assets, const fs::path& config_p
             log(std::string("Input state: ") + status.dump());
             write_file(app_directory() / "runtime.json", status.dump()); last_status = std::move(status);
         }
-        if (!any_active && !warned_inactive && now - started > std::chrono::seconds(30)) {
+        // Our actions can only be active while our set is; judge the
+        // bindings only after the set has been active for a while.
+        if (gate.open() && !any_active && !warned_inactive && now - started > std::chrono::seconds(30) && ms - open_ms > 5000) {
             log("No active bindings. Choose Frame Passthrough Shortcuts in SteamVR controller bindings.");
             warned_inactive = true;
         }
