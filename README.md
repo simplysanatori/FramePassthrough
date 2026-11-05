@@ -4,13 +4,13 @@ Passthrough shortcuts on the thumbsticks of the Valve Steam Frame.
 
 FramePassthrough is a fork of KominoVR's [Frame Passthrough Shortcuts](https://github.com/KominoVR/frame-passthrough-shortcuts) (v0.1.1). It is a small SteamVR background app that runs on the Frame itself. Double-press a thumbstick to switch between translucent and opaque passthrough. Hold one for a second to switch between the Arcturus RGB colour camera and the Frame's own monochrome cameras.
 
-The gestures only act while passthrough is showing. While passthrough is off, the app does nothing with your controllers.
+The gestures only act while passthrough is showing.
 
 ## Status
 
 Version 0.2.0, the first release of this fork. It is upstream 0.1.1 with 0.1.0's colour / mono camera switching brought back, plus a few changes for living with it every day. It runs on my Steam Frame.
 
-**Compared with the original.** Upstream dropped camera switching in 0.1.1 and points you to Valve's [Arcturus Vision Camera](https://store.steampowered.com/app/4103250/Arcturus_Vision_Camera/) app instead. That app has no controller shortcuts. Here the one-second hold switches cameras again, and the choice is saved. The original's gestures acted whenever the SteamVR dashboard was closed, with or without passthrough. Here they only act while passthrough is showing, and an option turns them off while a game is running. 0.1.0 also re-applied the saved camera many times a second, all the time. Here the camera is left alone while passthrough is off, so other camera tools are not overridden.
+**Compared with the original.** Upstream dropped camera switching in 0.1.1 and points you to Valve's [Arcturus Vision Camera](https://store.steampowered.com/app/4103250/Arcturus_Vision_Camera/) app instead, which has no controller shortcuts. Here the one-second hold switches cameras, and the choice is saved. The original's gestures acted whenever the SteamVR dashboard was closed, with or without passthrough. Here they only act while passthrough is showing, and an option turns them off while a game is running. 0.1.0 also re-applied the saved camera many times a second, all the time. Here the camera is left alone while passthrough is off, so other camera tools are not overridden.
 
 Known issues:
 
@@ -24,7 +24,7 @@ Known issues:
 - The colour / mono camera switch from 0.1.0: hold either stick click for a second. The choice is saved in `camera-preference.json` and set again each time passthrough opens.
 - The gestures only act while passthrough is showing. A gesture you started before passthrough opened is ignored.
 - `disable_while_game_running` in `config.json` (off by default). While a VR game is running, the gestures do nothing, even with passthrough open. `--set disable-while-game-running on|off` changes it from a terminal.
-- `config.json` is reloaded within a second of an edit. No restart.
+- `config.json` is reloaded within a second of an edit.
 - `passthrough_signal` in `config.json`, for choosing how the app tells that passthrough is showing (see [Settings](#settings)).
 - The saved camera is only checked and set while passthrough is showing.
 - It is registered as an internal SteamVR app, so it adds nothing to your Steam library.
@@ -40,7 +40,7 @@ Known issues:
 - The Arcturus RGB camera, for colour passthrough. It is optional. Without it, the double-press works and the hold does nothing.
 - A terminal on the Frame for a manual install: Konsole in desktop mode, or SSH. Frametanium needs none.
 
-Nothing else. The app is one small native Arm64 binary that needs only glibc 2.38 or newer, which SteamOS has.
+The app is one small native Arm64 binary that needs only glibc 2.38 or newer, which SteamOS has.
 
 ## Install
 
@@ -88,7 +88,7 @@ It stops the app, removes it from SteamVR and turns off autostart, and deletes `
 
 ## First run
 
-There is nothing to launch. The app starts in the background with SteamVR and shows no window.
+The app starts in the background with SteamVR and shows no window.
 
 1. Put the headset on.
 2. Open passthrough the usual way: double-press the headset's side button, or press the Steam button on either controller.

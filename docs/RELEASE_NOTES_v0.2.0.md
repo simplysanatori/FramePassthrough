@@ -1,35 +1,17 @@
 # FramePassthrough 0.2.0
 
-Passthrough shortcuts on the Steam Frame's thumbsticks. FramePassthrough is my fork of KominoVR's Frame Passthrough Shortcuts. It is a small SteamVR background app that runs on the Frame. Double-press either thumbstick to switch translucent and opaque passthrough. Hold one down for a second to switch between the colour and mono cameras.
+My fork of KominoVR's Frame Passthrough Shortcuts, a small SteamVR background app for the Steam Frame. Double-press either thumbstick to switch translucent and opaque passthrough. Hold a stick click for one second to switch between the colour and mono cameras.
 
-Thank you to KominoVR for the original app. The idea and the groundwork are theirs, and this fork stands on them.
+Thanks to KominoVR for the original app.
 
-### Colour and mono cameras
+### Changes
 
-- Hold either stick click for one second. Passthrough switches between the Arcturus RGB colour camera and the Frame's mono cameras.
-- The original dropped this in 0.1.1 and pointed to Valve's Arcturus Vision Camera app. That app has no shortcuts. Here the hold is back.
-- Your choice is saved. It comes back each time you open passthrough.
-- 0.1.0 used to set the camera again many times a second, all the time. Now it only does that while passthrough is showing. Other camera tools are left alone.
-
-### Gestures only while passthrough is open
-
-- The gestures only work while passthrough is showing. Open it as usual, with the headset's side button or the Steam button.
-- The original acted on every double-press with the dashboard closed. Now, with passthrough off, the app does nothing with your clicks.
-- A press you started before passthrough opened is ignored.
-- A new option, `disable_while_game_running`, turns the gestures off while a VR game runs. It is off by default. Set it in `config.json`, or run `frame-passthrough-shortcuts --set disable-while-game-running on`.
-- Edits to `config.json` apply within a second. No restart.
-
-### Quieter in the background
-
-- It adds nothing to your Steam library. It runs as an internal SteamVR app.
-- The log used to fill with other apps' binding errors. Now it only lists its own, with a timestamp on every line.
-- Uninstalling keeps your camera choice and your binding choice.
-- It is one small native Arm64 program. It needs nothing beyond glibc 2.38, which SteamOS has.
-
-### Install
-
-- It installs and updates from Frametanium.
-- It replaces the original in place. It keeps your camera choice, your bindings and SteamVR autostart.
+- The colour / mono camera switch is restored. The original removed it in 0.1.1 in favour of Valve's Arcturus Vision Camera app, which has no shortcuts.
+- Your camera choice is saved and set again each time you open passthrough. 0.1.0 set it many times a second, all the time. Now it only does so while passthrough is showing, so other camera tools are not overridden.
+- The gestures only work while passthrough is showing. The original acted on every double-press with the dashboard closed. A press started before passthrough opened is ignored.
+- New option `disable_while_game_running`, off by default, turns the gestures off while a VR game runs. Set it in `config.json` or with `frame-passthrough-shortcuts --set disable-while-game-running on`. Edits to `config.json` apply within a second.
+- It adds nothing to your Steam library, and its log lists only its own binding errors, with timestamps.
+- It replaces the original in place and keeps your camera choice, bindings and SteamVR autostart. Uninstalling keeps the camera and binding choices.
 
 ## Download
 
@@ -38,11 +20,11 @@ Thank you to KominoVR for the original app. The idea and the groundwork are thei
 
 ## Install
 
-**With Frametanium.** Add `simplysanatori/FramePassthrough`. Frametanium downloads the release and runs its `install.sh`. It updates it when I publish a new version.
+**With Frametanium.** Add `simplysanatori/FramePassthrough`. Frametanium installs it and updates it when I publish a new version.
 
-**By hand.** Unpack the tarball into a folder and run `./install.sh` from it. It copies the app to `~/.local/share/FramePassthrough/app`, registers it with SteamVR and turns on autostart. There is nothing to launch. It starts with SteamVR.
+**By hand.** Unpack the tarball into a folder and run `./install.sh` from it. The app starts with SteamVR.
 
-If you had the original installed, you can install straight over it. Then remove the original's entry from your library, so it is not launched again by mistake. The [README](https://github.com/simplysanatori/FramePassthrough/blob/steam-frame/README.md) has the full steps, the settings and how to uninstall.
+If the original is installed, install over it, then remove its entry from your library. The [README](https://github.com/simplysanatori/FramePassthrough/blob/steam-frame/README.md) has the full steps and settings.
 
 ## Known issues
 
