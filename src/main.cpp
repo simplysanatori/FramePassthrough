@@ -320,6 +320,10 @@ int run(const fs::path& binary, const fs::path& assets, const fs::path& config_p
     std::string config_error;
     SceneApp scene;
     auto next_scene_check = uint64_t{0};
+    bool camera_was_visible = false;
+    auto camera_burst_until = uint64_t{0};
+    auto next_camera_check = uint64_t{0};
+    json rgb_connected = nullptr;
     if (config.disable_while_game_running) log("Shortcuts are also disabled while a game is running (disable_while_game_running).");
     vr::VRActiveActionSet_t active{};
     active.ulActionSet = action_set;
@@ -422,12 +426,24 @@ int run(const fs::path& binary, const fs::path& assets, const fs::path& config_p
         } else {
             removal_seen = std::chrono::steady_clock::time_point{};
         }
-        try {
-            if (controls.reconcile_camera_source()) log("Updated camera source for camera availability and saved preference.");
-            camera_error.clear();
-        } catch (const std::exception& error) {
-            if (camera_error != error.what()) log(std::string("Camera restoration deferred: ") + error.what());
-            camera_error = error.what();
+        // Restore the saved RGB / mono choice only while passthrough is
+        // visible: every poll for a few seconds after it appears (SteamVR
+        // resets the source when it reopens the camera renderer, and the
+        // renderer takes a moment to initialize), then every two seconds in
+        // case the camera module is reconnected. Nothing is read or written
+        // while passthrough is hidden, so other tools are left alone.
+        const bool camera_visible = passthrough.visibility() != fps::Visibility::Hidden;
+        if (camera_visible && !camera_was_visible) camera_burst_until = monotonic_ms() + 5000;
+        camera_was_visible = camera_visible;
+        if (camera_visible && (monotonic_ms() < camera_burst_until || monotonic_ms() >= next_camera_check)) {
+            next_camera_check = monotonic_ms() + 2000;
+            try {
+                if (controls.reconcile_camera_source()) log("Updated camera source for camera availability and saved preference.");
+                camera_error.clear();
+            } catch (const std::exception& error) {
+                if (camera_error != error.what()) log(std::string("Camera restoration deferred: ") + error.what());
+                camera_error = error.what();
+            }
         }
         bool any_active = false;
         json input_active = json::object();
@@ -485,12 +501,17 @@ int run(const fs::path& binary, const fs::path& assets, const fs::path& config_p
         json status{{"pid", pid}, {"ready", true}, {"input_active", input_active},
             {"dashboard_visible", vr::VROverlay()->IsDashboardVisible()},
             {"input_priority", set_active ? active.nPriority : 0}};
-        try { status["arcturus_rgb_camera_connected"] = camera.rgb_available(); }
-        catch (const std::exception& error) {
-            status["arcturus_rgb_camera_connected"] = nullptr;
-            if (camera_error != error.what()) log(std::string("Camera detection deferred: ") + error.what());
-            camera_error = error.what();
+        // The RGB module probe opens camera device nodes; only do it while
+        // passthrough is visible and report the last value otherwise.
+        if (camera_visible) {
+            try { rgb_connected = camera.rgb_available(); }
+            catch (const std::exception& error) {
+                rgb_connected = nullptr;
+                if (camera_error != error.what()) log(std::string("Camera detection deferred: ") + error.what());
+                camera_error = error.what();
+            }
         }
+        status["arcturus_rgb_camera_connected"] = rgb_connected;
         if (controls.preferred_rgb()) status["preferred_rgb"] = *controls.preferred_rgb();
         status["gate"] = {{"open", gate.open()}, {"reason", fps::to_string(gate.reason())},
             {"passthrough", fps::to_string(passthrough.visibility())}, {"signal", gate_detail},
