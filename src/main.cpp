@@ -394,6 +394,8 @@ int run(const fs::path& binary, const fs::path& assets, const fs::path& config_p
     std::string config_error;
     SceneApp scene;
     auto next_scene_check = uint64_t{0};
+    auto next_setting_check = uint64_t{0};
+    std::string setting_error;
     bool camera_was_visible = false;
     auto camera_burst_until = uint64_t{0};
     auto next_camera_check = uint64_t{0};
@@ -437,6 +439,7 @@ int run(const fs::path& binary, const fs::path& assets, const fs::path& config_p
                 log("SteamVR could not load the selected bindings. Select a new binding in SteamVR.");
             if (event.eventType == vr::VREvent_SceneApplicationChanged ||
                 event.eventType == vr::VREvent_SceneApplicationStateChanged) next_scene_check = 0;
+            if (event.eventType == vr::VREvent_CameraSettingsHaveChanged) next_setting_check = 0;
             if (event.eventType == vr::VREvent_RoomViewShown) passthrough.on_room_view_event(true);
             if (event.eventType == vr::VREvent_RoomViewHidden) passthrough.on_room_view_event(false);
         }
@@ -471,6 +474,23 @@ int run(const fs::path& binary, const fs::path& assets, const fs::path& config_p
                 log("Scene application: " + (now_scene.pid ? now_scene.key + " (pid " + std::to_string(now_scene.pid) + ")" : std::string("none")) +
                     (now_scene.game ? ", counts as a game" : ""));
             scene = now_scene;
+            passthrough.set_scene_app_running(scene.pid != 0);
+        }
+        // Opening / closing passthrough in the Frame's home view flips
+        // camera.enableConstructRoomView and sends CameraSettingsHaveChanged;
+        // re-read on that event and every half second as a backstop.
+        if (monotonic_ms() >= next_setting_check) {
+            next_setting_check = monotonic_ms() + 500;
+            vr::EVRSettingsError error = vr::VRSettingsError_None;
+            const bool construct = vr::VRSettings()->GetBool(vr::k_pch_Camera_Section, "enableConstructRoomView", &error);
+            if (error == vr::VRSettingsError_None) {
+                passthrough.on_construct_setting(construct);
+                setting_error.clear();
+            } else {
+                const std::string message = vr::VRSettings()->GetSettingsErrorNameFromEnum(error);
+                if (message != setting_error) log("Cannot read camera.enableConstructRoomView: " + message);
+                setting_error = message;
+            }
         }
         passthrough.poll();
         {

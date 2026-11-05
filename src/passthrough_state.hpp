@@ -15,7 +15,9 @@ namespace fps {
 
 // Which signal decides whether passthrough is visible.
 enum class PassthroughSignal {
-    Auto,       // newest observation from either source below
+    Auto,       // Setting while no scene app runs; newest of Events / SteamVrLog
+                // while one does
+    Setting,    // camera.enableConstructRoomView only
     Events,     // OpenVR VREvent_RoomViewShown / VREvent_RoomViewHidden only
     SteamVrLog, // XRService room view rendering mode, as logged by vrserver
     Off,        // do not gate on passthrough at all (upstream behaviour)
@@ -45,6 +47,16 @@ private:
 };
 
 // Combines the passthrough signals into one Visibility.
+//
+// Proven on SteamVR 2.19.1 / Steam Frame (probe session 2026-11-05, home
+// view, no scene app): every passthrough open and close flips the setting
+// camera.enableConstructRoomView (announced by VREvent_CameraSettingsHaveChanged),
+// XRService's logged currentRoomViewRenderingMode (6 / 0) and the
+// compositor's RoomViewFullyOccludingApp flag together, and nothing else
+// (dashboard open / close, standby) flips them. The setting changes first
+// and is public API, so it decides in the home view. Room View over a
+// running scene app is reported by VREvent_RoomViewShown / Hidden ("for
+// scene apps only") and by the XRService mode, so those decide then.
 class PassthroughState {
 public:
     PassthroughState(PassthroughSignal signal, std::filesystem::path vrserver_log);
@@ -54,6 +66,10 @@ public:
 
     // Feed VREvent_RoomViewShown (true) / VREvent_RoomViewHidden (false).
     void on_room_view_event(bool shown);
+    // Current value of camera.enableConstructRoomView.
+    void on_construct_setting(bool enabled);
+    // Whether SteamVR has a scene application (any process, game or home).
+    void set_scene_app_running(bool running) { scene_running_ = running; }
     // Read new SteamVR log lines. Cheap when nothing changed (one stat).
     void poll();
 
@@ -70,6 +86,8 @@ private:
     LogFollower log_;
     Observation from_events_;
     Observation from_log_;
+    Observation from_setting_;
+    bool scene_running_ = false;
     int last_mode_ = -1;
     std::uint64_t sequence_ = 0;
 };

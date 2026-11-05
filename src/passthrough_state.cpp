@@ -11,6 +11,7 @@ namespace fps {
 std::optional<PassthroughSignal> parse_passthrough_signal(const std::string& text) {
     if (text == "auto") return PassthroughSignal::Auto;
     if (text == "events") return PassthroughSignal::Events;
+    if (text == "setting") return PassthroughSignal::Setting;
     if (text == "steamvr_log") return PassthroughSignal::SteamVrLog;
     if (text == "off") return PassthroughSignal::Off;
     return std::nullopt;
@@ -20,6 +21,7 @@ const char* to_string(PassthroughSignal signal) {
     switch (signal) {
     case PassthroughSignal::Auto: return "auto";
     case PassthroughSignal::Events: return "events";
+    case PassthroughSignal::Setting: return "setting";
     case PassthroughSignal::SteamVrLog: return "steamvr_log";
     case PassthroughSignal::Off: return "off";
     }
@@ -80,8 +82,13 @@ void PassthroughState::on_room_view_event(bool shown) {
     from_events_ = {shown ? Visibility::Visible : Visibility::Hidden, ++sequence_};
 }
 
+void PassthroughState::on_construct_setting(bool enabled) {
+    const auto value = enabled ? Visibility::Visible : Visibility::Hidden;
+    if (from_setting_.value != value) from_setting_ = {value, ++sequence_};
+}
+
 void PassthroughState::poll() {
-    if (signal_ == PassthroughSignal::Events || signal_ == PassthroughSignal::Off) return;
+    if (signal_ != PassthroughSignal::Auto && signal_ != PassthroughSignal::SteamVrLog) return;
     log_.poll([this](const std::string& line) {
         const auto mode = parse_room_view_rendering_mode(line);
         if (!mode) return;
@@ -94,8 +101,10 @@ Visibility PassthroughState::visibility() const {
     switch (signal_) {
     case PassthroughSignal::Off: return Visibility::Visible;
     case PassthroughSignal::Events: return from_events_.value;
+    case PassthroughSignal::Setting: return from_setting_.value;
     case PassthroughSignal::SteamVrLog: return from_log_.value;
     case PassthroughSignal::Auto:
+        if (!scene_running_) return from_setting_.value;
         if (from_events_.value == Visibility::Unknown) return from_log_.value;
         if (from_log_.value == Visibility::Unknown) return from_events_.value;
         return from_events_.sequence > from_log_.sequence ? from_events_.value : from_log_.value;
@@ -105,6 +114,8 @@ Visibility PassthroughState::visibility() const {
 
 std::string PassthroughState::detail() const {
     std::string text = std::string("signal=") + to_string(signal_);
+    text += std::string(", scene_app=") + (scene_running_ ? "yes" : "no");
+    text += ", construct_setting=" + std::string(to_string(from_setting_.value));
     text += ", event=" + std::string(to_string(from_events_.value));
     text += ", xrservice_mode=" + (last_mode_ < 0 ? std::string("none") : std::to_string(last_mode_));
     return text;

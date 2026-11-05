@@ -92,8 +92,8 @@ void check_no_nul(const std::string& value, const std::string& location) {
 
 void validate_config(const Config& config) {
     const auto& signal = config.passthrough_signal;
-    if (signal != "auto" && signal != "events" && signal != "steamvr_log" && signal != "off") {
-        invalid("passthrough_signal must be auto, events, steamvr_log or off");
+    if (signal != "auto" && signal != "setting" && signal != "events" && signal != "steamvr_log" && signal != "off") {
+        invalid("passthrough_signal must be auto, setting, events, steamvr_log or off");
     }
     if (config.poll_interval_ms < 10 || config.poll_interval_ms > 1000) {
         invalid("poll_interval_ms must be between 10 and 1000");

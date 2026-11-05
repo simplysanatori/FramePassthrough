@@ -213,25 +213,61 @@ std::string block(int mode) {
 void test_passthrough_state() {
     TempDir dir;
     const auto file = dir.path / "vrserver.txt";
-    // History: the newest logged mode decides the startup state.
+    // History: the newest logged mode is known after the first poll.
     append(file, block(0) + block(6) + block(0) + block(6));
+
+    // Home view (no scene app): camera.enableConstructRoomView decides,
+    // whatever the log or stray events say.
     PassthroughState state(PassthroughSignal::Auto, file);
-    CHECK(state.visibility() == Visibility::Unknown);
     state.poll();
+    CHECK(state.visibility() == Visibility::Unknown); // setting not read yet
+    state.on_construct_setting(true);
     CHECK(state.visibility() == Visibility::Visible);
+    state.on_construct_setting(false);
+    CHECK(state.visibility() == Visibility::Hidden);
+    state.on_room_view_event(true);
+    CHECK(state.visibility() == Visibility::Hidden);
+    // The probe session's sequence: off, on, off, on, off, on.
+    for (bool on : {false, true, false, true, false, true}) {
+        state.on_construct_setting(on);
+        CHECK(state.visibility() == (on ? Visibility::Visible : Visibility::Hidden));
+    }
+
+    // A scene app runs: newest of RoomView events and the XRService mode.
+    state.set_scene_app_running(true);
+    CHECK(state.visibility() == Visibility::Visible); // newest: the event above
     append(file, block(0));
     state.poll();
     CHECK(state.visibility() == Visibility::Hidden);
-    // Auto: the newest observation wins, whichever source it came from.
     state.on_room_view_event(true);
     CHECK(state.visibility() == Visibility::Visible);
-    append(file, block(0));
-    state.poll();
+    state.on_construct_setting(false); // ignored while a scene app runs
+    CHECK(state.visibility() == Visibility::Visible);
+    state.on_room_view_event(false);
     CHECK(state.visibility() == Visibility::Hidden);
+    // Scene app quits: back to the setting.
+    state.set_scene_app_running(false);
+    state.on_construct_setting(true);
+    CHECK(state.visibility() == Visibility::Visible);
+
+    PassthroughState scene_log_only(PassthroughSignal::Auto, file);
+    scene_log_only.set_scene_app_running(true);
+    scene_log_only.poll();
+    CHECK(scene_log_only.visibility() == Visibility::Hidden); // newest logged mode is 0
+    PassthroughState scene_unknown(PassthroughSignal::Auto, dir.path / "absent.txt");
+    scene_unknown.set_scene_app_running(true);
+    scene_unknown.poll();
+    CHECK(scene_unknown.visibility() == Visibility::Unknown); // fails open
+
+    PassthroughState setting(PassthroughSignal::Setting, file);
+    setting.set_scene_app_running(true);
+    setting.on_construct_setting(true);
+    CHECK(setting.visibility() == Visibility::Visible);
 
     PassthroughState events(PassthroughSignal::Events, file);
     events.poll();
-    CHECK(events.visibility() == Visibility::Unknown); // log ignored
+    events.on_construct_setting(true);
+    CHECK(events.visibility() == Visibility::Unknown); // log and setting ignored
     events.on_room_view_event(false);
     CHECK(events.visibility() == Visibility::Hidden);
 
@@ -243,10 +279,6 @@ void test_passthrough_state() {
 
     PassthroughState off(PassthroughSignal::Off, file);
     CHECK(off.visibility() == Visibility::Visible);
-
-    PassthroughState missing(PassthroughSignal::Auto, dir.path / "absent.txt");
-    missing.poll();
-    CHECK(missing.visibility() == Visibility::Unknown);
 }
 
 void test_scene_classification() {
@@ -264,6 +296,7 @@ void test_scene_classification() {
 void test_config() {
     CHECK(parse_config("{}").passthrough_signal == "auto");
     CHECK(parse_config("{\"passthrough_signal\": \"steamvr_log\"}").passthrough_signal == "steamvr_log");
+    CHECK(parse_config("{\"passthrough_signal\": \"setting\"}").passthrough_signal == "setting");
     CHECK(throws([] { parse_config("{\"passthrough_signal\": \"maybe\"}"); }));
     // The 0.1.x config files keep working.
     const auto old = parse_config("{\n  \"poll_interval_ms\": 20,\n  \"debounce_ms\": 250\n}\n");
