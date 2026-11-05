@@ -155,7 +155,8 @@ Config parse_config(const std::string& json_text) {
     } catch (const Json::exception& error) {
         invalid(error.what());
     }
-    check_keys(document, {"poll_interval_ms", "debounce_ms", "rgb", "passthrough_signal"}, "config");
+    check_keys(document, {"poll_interval_ms", "debounce_ms", "rgb", "passthrough_signal",
+        "disable_while_game_running"}, "config");
     Config config;
     if (document.contains("poll_interval_ms")) {
         config.poll_interval_ms = static_cast<std::uint32_t>(integer(
@@ -164,6 +165,12 @@ Config parse_config(const std::string& json_text) {
     if (document.contains("debounce_ms")) {
         config.debounce_ms = static_cast<std::uint32_t>(integer(
             document.at("debounce_ms"), "debounce_ms", 0, 5000));
+    }
+    if (document.contains("disable_while_game_running")) {
+        if (!document.at("disable_while_game_running").is_boolean()) {
+            invalid("disable_while_game_running must be true or false");
+        }
+        config.disable_while_game_running = document.at("disable_while_game_running").get<bool>();
     }
     if (document.contains("passthrough_signal")) {
         config.passthrough_signal = string_value(document.at("passthrough_signal"), "passthrough_signal");
@@ -195,6 +202,15 @@ Config parse_config(const std::string& json_text) {
     }
     validate_config(config);
     return config;
+}
+
+std::string set_config_option(const std::string& json_text, const std::string& key, bool value) {
+    (void)parse_config(json_text); // refuse to rewrite a file that is already invalid
+    auto document = nlohmann::ordered_json::parse(json_text);
+    document[key] = value;
+    auto text = document.dump(2) + "\n";
+    (void)parse_config(text);
+    return text;
 }
 
 Config load_config(const std::filesystem::path& path) {

@@ -269,6 +269,25 @@ void test_config() {
     const auto old = parse_config("{\n  \"poll_interval_ms\": 20,\n  \"debounce_ms\": 250\n}\n");
     CHECK(old.poll_interval_ms == 20 && old.debounce_ms == 250);
     CHECK(throws([] { parse_config("{\"unknown\": 1}"); }));
+    CHECK(!parse_config("{}").disable_while_game_running);
+    CHECK(parse_config("{\"disable_while_game_running\": true}").disable_while_game_running);
+    CHECK(throws([] { parse_config("{\"disable_while_game_running\": \"yes\"}"); }));
+}
+
+void test_set_config_option() {
+    const std::string original = "{\n  \"poll_interval_ms\": 20,\n  \"debounce_ms\": 250\n}\n";
+    const auto on = set_config_option(original, "disable_while_game_running", true);
+    CHECK(parse_config(on).disable_while_game_running);
+    CHECK(parse_config(on).poll_interval_ms == 20);
+    // Existing keys keep their order; the new key goes last.
+    CHECK(on.find("poll_interval_ms") < on.find("debounce_ms"));
+    CHECK(on.find("debounce_ms") < on.find("disable_while_game_running"));
+    const auto off = set_config_option(on, "disable_while_game_running", false);
+    CHECK(!parse_config(off).disable_while_game_running);
+    CHECK(off.find("disable_while_game_running") != std::string::npos);
+    // Never rewrite an invalid file, never write an unknown key.
+    CHECK(throws([] { set_config_option("{\"bad\": 1}", "disable_while_game_running", true); }));
+    CHECK(throws([&] { set_config_option(original, "no_such_option", true); }));
 }
 
 } // namespace
@@ -285,6 +304,7 @@ int main() {
         {"passthrough_state", test_passthrough_state},
         {"scene_classification", test_scene_classification},
         {"config", test_config},
+        {"set_config_option", test_set_config_option},
     };
     for (const auto& [name, test] : tests) {
         const int before = failures;

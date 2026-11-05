@@ -25,7 +25,14 @@ struct Config {
     // Which signal decides that passthrough is visible: auto, events,
     // steamvr_log, or off (never gate on passthrough).
     std::string passthrough_signal = "auto";
+    // Also disable the gestures while a game (any scene application other
+    // than a SteamVR home) is running, even when passthrough is visible.
+    bool disable_while_game_running = false;
 };
+
+// Returns json_text with one top-level option set, keeping the other keys
+// and their order. The result is validated with parse_config.
+std::string set_config_option(const std::string& json_text, const std::string& key, bool value);
 
 Config parse_config(const std::string& json_text);
 Config load_config(const std::filesystem::path& path);

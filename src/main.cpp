@@ -15,6 +15,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <thread>
@@ -22,6 +23,7 @@
 #include <cerrno>
 #include <fcntl.h>
 #include <sys/file.h>
+#include <sys/stat.h>
 #include <sys/wait.h>
 #include <unistd.h>
 
@@ -73,6 +75,46 @@ fs::path steamvr_server_log() {
     const auto root = fs::canonical(base / ".steam/root", error);
     const auto logs = !error && fs::is_directory(root / "logs") ? root / "logs" : base / ".local/share/Steam/logs";
     return logs / "vrserver.txt";
+}
+
+// Detects edits to config.json (mtime, size or inode) so options apply
+// without restarting the app.
+class ConfigWatcher {
+    fs::path path_;
+    fs::file_time_type mtime_{};
+    std::uintmax_t size_ = 0;
+    ino_t inode_ = 0;
+public:
+    explicit ConfigWatcher(fs::path path) : path_(std::move(path)) { changed(); }
+    bool changed() {
+        struct stat info {};
+        std::error_code error;
+        const auto mtime = fs::last_write_time(path_, error);
+        if (error || ::stat(path_.c_str(), &info) != 0) return false;
+        const auto size = static_cast<std::uintmax_t>(info.st_size);
+        const bool different = mtime != mtime_ || size != size_ || info.st_ino != inode_;
+        mtime_ = mtime; size_ = size; inode_ = info.st_ino;
+        return different;
+    }
+};
+
+struct SceneApp {
+    uint32_t pid = 0;
+    std::string key;
+    bool game = false;
+    bool operator!=(const SceneApp& other) const { return pid != other.pid || key != other.key; }
+};
+
+SceneApp current_scene_app() {
+    SceneApp scene;
+    scene.pid = vr::VRApplications()->GetCurrentSceneProcessId();
+    if (scene.pid) {
+        std::array<char, vr::k_unMaxApplicationKeyLength> key{};
+        if (vr::VRApplications()->GetApplicationKeyByProcessId(scene.pid, key.data(), static_cast<uint32_t>(key.size())) == vr::VRApplicationError_None)
+            scene.key = key.data();
+    }
+    scene.game = fps::is_game_scene_app(scene.pid, scene.key);
+    return scene;
 }
 
 uint64_t monotonic_ms() {
@@ -233,7 +275,7 @@ void save_camera_preference(const fps::Controller& controls) {
     fs::rename(temporary, app_directory() / "camera-preference.json");
 }
 
-int run(const fs::path& binary, const fs::path& assets, const fs::path& config_path, const fps::Config& config, bool bindings) {
+int run(const fs::path& binary, const fs::path& assets, const fs::path& config_path, fps::Config config, bool bindings) {
     InstanceLock lock;
     application_log.open(app_directory() / "application.log", std::ios::app);
     VrSession session(!bindings, false, true);
@@ -273,6 +315,12 @@ int run(const fs::path& binary, const fs::path& assets, const fs::path& config_p
     timings.double_press_guard_ms = std::max<uint32_t>(config.debounce_ms, 250);
     fps::InputGate gate(timings);
     std::string gate_detail;
+    ConfigWatcher config_watch(config_path);
+    auto next_config_check = uint64_t{0};
+    std::string config_error;
+    SceneApp scene;
+    auto next_scene_check = uint64_t{0};
+    if (config.disable_while_game_running) log("Shortcuts are also disabled while a game is running (disable_while_game_running).");
     vr::VRActiveActionSet_t active{};
     active.ulActionSet = action_set;
     // The action set is only activated while the gate is open; while it is
@@ -309,13 +357,49 @@ int run(const fs::path& binary, const fs::path& assets, const fs::path& config_p
             if (event.eventType == vr::VREvent_Input_BindingLoadFailed &&
                 static_cast<uint32_t>(event.data.inputBinding.ulAppContainer & 0xffffffffu) == static_cast<uint32_t>(getpid()))
                 log("SteamVR could not load the selected bindings. Select a new binding in SteamVR.");
+            if (event.eventType == vr::VREvent_SceneApplicationChanged ||
+                event.eventType == vr::VREvent_SceneApplicationStateChanged) next_scene_check = 0;
             if (event.eventType == vr::VREvent_RoomViewShown) passthrough.on_room_view_event(true);
             if (event.eventType == vr::VREvent_RoomViewHidden) passthrough.on_room_view_event(false);
+        }
+        if (monotonic_ms() >= next_config_check) {
+            next_config_check = monotonic_ms() + 1000;
+            if (config_watch.changed()) {
+                try {
+                    auto reloaded = fps::load_config(config_path);
+                    reloaded.rgb = config.rgb; // the camera backend is fixed for Frame
+                    if (reloaded.disable_while_game_running != config.disable_while_game_running)
+                        log(std::string("Config reloaded: disable_while_game_running is now ") +
+                            (reloaded.disable_while_game_running ? "on" : "off"));
+                    if (reloaded.passthrough_signal != config.passthrough_signal)
+                        log("Config reloaded: passthrough_signal is now " + reloaded.passthrough_signal);
+                    if (reloaded.debounce_ms != config.debounce_ms)
+                        for (auto& press : gates) press = fps::PressGate(reloaded.debounce_ms);
+                    timings.double_press_guard_ms = std::max<uint32_t>(reloaded.debounce_ms, 250);
+                    gate.set_timings(timings);
+                    passthrough.set_signal(*fps::parse_passthrough_signal(reloaded.passthrough_signal));
+                    config = reloaded;
+                    config_error.clear();
+                } catch (const std::exception& error) {
+                    if (config_error != error.what()) log(std::string("Config reload failed; keeping the previous settings: ") + error.what());
+                    config_error = error.what();
+                }
+            }
+        }
+        if (monotonic_ms() >= next_scene_check) {
+            next_scene_check = monotonic_ms() + 500;
+            const auto now_scene = current_scene_app();
+            if (now_scene != scene)
+                log("Scene application: " + (now_scene.pid ? now_scene.key + " (pid " + std::to_string(now_scene.pid) + ")" : std::string("none")) +
+                    (now_scene.game ? ", counts as a game" : ""));
+            scene = now_scene;
         }
         passthrough.poll();
         {
             fps::GateInputs inputs;
             inputs.passthrough = passthrough.visibility();
+            inputs.game_running = scene.game;
+            inputs.disable_while_game_running = config.disable_while_game_running;
             const bool was_open = gate.open();
             if (gate.update(inputs, monotonic_ms())) {
                 log(std::string("Shortcuts ") + (gate.open() ? "enabled" : "disabled") + ": " +
@@ -409,7 +493,9 @@ int run(const fs::path& binary, const fs::path& assets, const fs::path& config_p
         }
         if (controls.preferred_rgb()) status["preferred_rgb"] = *controls.preferred_rgb();
         status["gate"] = {{"open", gate.open()}, {"reason", fps::to_string(gate.reason())},
-            {"passthrough", fps::to_string(passthrough.visibility())}, {"signal", gate_detail}};
+            {"passthrough", fps::to_string(passthrough.visibility())}, {"signal", gate_detail},
+            {"game_running", scene.game}, {"scene_app", scene.key},
+            {"disable_while_game_running", config.disable_while_game_running}};
         if (status != last_status) {
             log(std::string("Input state: ") + status.dump());
             write_file(app_directory() / "runtime.json", status.dump()); last_status = std::move(status);
@@ -617,6 +703,8 @@ void help() {
         "  --bindings            Open bindings (use --stop first)\n"
         "  --action NAME         toggle-style, translucent, opaque, toggle-rgb, rgb, monochrome\n"
         "  --validate            Check config and bundled action manifest without SteamVR\n"
+        "  --set disable-while-game-running on|off\n"
+        "                        Also disable the gestures while a game runs (default off)\n"
         "  --config PATH         Use this JSON config (default: config.json beside executable)\n"
         "  --help                Show this help");
 }
@@ -636,6 +724,7 @@ int main(int argc, char** argv) {
         bool registered_config = false;
         bool explicit_config = false;
         std::string action;
+        std::string set_name, set_value;
         for (int i = 1; i < argc; ++i) {
             const std::string arg = argv[i];
             if (arg == "--help" || arg == "-h") { help(); return 0; }
@@ -650,7 +739,11 @@ int main(int argc, char** argv) {
                 if (++i == argc) throw std::runtime_error("--action needs a name");
                 action = argv[i];
                 (void)parse_action(action);
-            } else if (arg != "--run" && arg != "--install" && arg != "--uninstall" && arg != "--stop" && arg != "--status" && arg != "--doctor" && arg != "--self-test" && arg != "--bindings" && arg != "--validate")
+            } else if (arg == "--set") {
+                if (i + 2 >= argc) throw std::runtime_error("--set needs an option and a value, e.g. --set disable-while-game-running on");
+                set_name = argv[++i];
+                set_value = argv[++i];
+            } else if (arg != "--run" && arg != "--install" && arg != "--uninstall" && arg != "--stop" && arg != "--status" && arg != "--doctor" && arg != "--self-test" && arg != "--bindings" && arg != "--validate" && arg != "--set")
                 throw std::runtime_error("Unknown command: " + arg);
         }
         const bool management = command == "--install" || command == "--uninstall" || command == "--stop" || command == "--status";
@@ -682,6 +775,36 @@ int main(int argc, char** argv) {
             VrSession session(false, true);
             stop_registered_application();
             cleanup_removed_install(binary);
+            return 0;
+        }
+        if (command == "--set") {
+            // Edit the config the running app uses (launch.json), unless
+            // --config names another file. The app reloads it within a second.
+            if (!explicit_config) {
+                std::ifstream stream(app_directory() / "launch.json");
+                json launch;
+                if (stream && (stream >> launch) && launch.contains("config") && launch.at("config").is_string()) {
+                    const auto registered = fs::u8path(launch.at("config").get<std::string>());
+                    if (registered.is_absolute() && fs::exists(registered)) config_path = registered;
+                }
+            }
+            for (auto& c : set_name) if (c == '-') c = '_';
+            if (set_name != "disable_while_game_running")
+                throw std::runtime_error("Unknown option for --set: " + set_name + " (supported: disable-while-game-running)");
+            bool enabled;
+            if (set_value == "on" || set_value == "true" || set_value == "1") enabled = true;
+            else if (set_value == "off" || set_value == "false" || set_value == "0") enabled = false;
+            else throw std::runtime_error("--set value must be on or off");
+            std::ifstream input(config_path, std::ios::binary);
+            if (!input) throw std::runtime_error("Cannot open configuration: " + config_path.string());
+            std::ostringstream text;
+            text << input.rdbuf();
+            const auto updated = fps::set_config_option(text.str(), set_name, enabled);
+            const auto temporary = config_path.string() + ".pending";
+            write_file(temporary, updated);
+            fs::rename(temporary, config_path);
+            log(set_name + " is now " + (enabled ? "on" : "off") + " in " + config_path.string() +
+                ". A running app applies it within a second.");
             return 0;
         }
         if (registered_config) {
