@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Problem reports: a crash or fatal error of the background app saves a scrubbed report (home folder, user name, host name and network addresses removed). `--show-report` shows it, `--send-report` sends that one report to the developer's Sentry project, `--discard-report` deletes it. `--report-problem "text"` saves one by hand, `--test-crash` tests it. Nothing is sent unless you run `--send-report`. See [docs/PRIVACY.md](docs/PRIVACY.md).
+
 ## 0.2.0 (November 2026)
 
 The first release of FramePassthrough, a fork of KominoVR's Frame Passthrough Shortcuts 0.1.1 for the Steam Frame. The original reacts to the stick gestures all the time, so a game's own stick hold or double-press can trigger it. This fork only reacts while passthrough is showing, in Home or in a game.

@@ -4,6 +4,7 @@
 #include "controller.hpp"
 #include "gate.hpp"
 #include "passthrough_state.hpp"
+#include "report.hpp"
 
 #include <cstdio>
 #include <cstdlib>
@@ -378,6 +379,52 @@ void test_set_config_option() {
     CHECK(throws([&] { set_config_option(original, "no_such_option", true); }));
 }
 
+void test_report_scrub() {
+    ScrubInfo info{"/home/sana", "sana", "frame-7"};
+    CHECK(scrub("/home/sana/.config/x and /home/sanatori/y", info) == "~/.config/x and /home/sanatori/y");
+    CHECK(scrub("user sana on frame-7, not sanatori", info) == "user <user> on <host>, not sanatori");
+    CHECK(scrub_network("from 192.168.1.20 and 10.0.0.1:8080.") == "from <ip> and <ip>:8080.");
+    CHECK(scrub_network("mac 3c:22:fb:01:02:0a") == "mac <mac>");
+    CHECK(scrub_network("v6 fe80::1c2b:3cff:fe4d:5e6f end") == "v6 <ip> end");
+    // Timestamps, versions and code addresses stay.
+    const std::string kept = "2026-11-16 12:34:56.789 SteamVR 2.19.1 x(+0x1a2b) [0xaaaabbbb1234] 1.2.3.4.5";
+    CHECK(scrub_network(kept) == kept);
+}
+
+void test_report_tail_and_header() {
+    CHECK(tail_lines("a\nb\nc\n", 2) == "b\nc\n");
+    CHECK(tail_lines("a\nb", 5) == "a\nb");
+    CHECK(tail_lines("a\nb\n", 0).empty());
+    const auto header = report_header("Title\nKind: crash\nReason: Crashed: x\n\nStack:\nNot: a header\n");
+    CHECK(header.at("Kind") == "crash");
+    CHECK(header.at("Reason") == "Crashed: x");
+    CHECK(header.count("Not") == 0);
+}
+
+void test_report_envelope() {
+    CHECK(!parse_dsn("http://k@host/1"));
+    CHECK(!parse_dsn("https://host/1"));
+    const auto dsn = parse_dsn("https://abc123@o1.ingest.us.sentry.io/42");
+    CHECK(dsn && dsn->key == "abc123" && dsn->project == "42");
+    CHECK(dsn && dsn->envelope_url() == "https://o1.ingest.us.sentry.io/api/42/envelope/");
+    const std::string report = "FramePassthrough problem report\nKind: crash\nReason: Crashed with SIGSEGV (signal 11)\n"
+        "Signal: SIGSEGV\nRelease: framepassthrough@0.2.0\n\nStack:\nx\n";
+    const auto envelope = build_envelope(report, "https://abc123@o1.ingest.us.sentry.io/42",
+        "0123456789abcdef0123456789abcdef", 1800000000, "0.2.0", "production");
+    std::vector<std::string> lines;
+    std::size_t at = 0;
+    for (auto end = envelope.find('\n'); end != std::string::npos; at = end + 1, end = envelope.find('\n', at))
+        lines.push_back(envelope.substr(at, end - at));
+    CHECK(lines.size() >= 4);
+    CHECK(lines[0].find("\"event_id\":\"0123456789abcdef0123456789abcdef\"") != std::string::npos);
+    CHECK(lines[2].find("\"release\":\"framepassthrough@0.2.0\"") != std::string::npos);
+    CHECK(lines[2].find("\"type\":\"SIGSEGV\"") != std::string::npos);
+    CHECK(lines[2].find("\"infer_ip\":\"never\"") != std::string::npos);
+    CHECK(lines[2].find("server_name") == std::string::npos);
+    CHECK(lines[1] == "{\"length\":" + std::to_string(lines[2].size()) + ",\"type\":\"event\"}");
+    CHECK(envelope.find(report) != std::string::npos);
+}
+
 } // namespace
 
 int main() {
@@ -394,6 +441,9 @@ int main() {
         {"scene_classification", test_scene_classification},
         {"config", test_config},
         {"set_config_option", test_set_config_option},
+        {"report_scrub", test_report_scrub},
+        {"report_tail_and_header", test_report_tail_and_header},
+        {"report_envelope", test_report_envelope},
     };
     for (const auto& [name, test] : tests) {
         const int before = failures;

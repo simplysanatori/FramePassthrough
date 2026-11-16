@@ -31,6 +31,14 @@ domain or MIT terms; the MIT notice is reproduced below for binary distributions
 - License: MIT. The full notice is included at
   [third_party/json/LICENSE.MIT](third_party/json/LICENSE.MIT).
 
+## Sentry
+
+No Sentry SDK is included. `--send-report` writes Sentry's documented
+[envelope format](https://develop.sentry.dev/sdk/data-model/envelopes/) itself
+and posts it with the system's `curl`, only when the user runs it. Reports go
+to the developer's project on [sentry.io](https://sentry.io), a service of
+Functional Software, Inc.; see [docs/PRIVACY.md](docs/PRIVACY.md).
+
 ## JsonCpp notice from the OpenVR SDK
 
 ```text

@@ -20,8 +20,33 @@ endif()
 include(cmake/OpenVRLoader.cmake)
 find_package(Threads REQUIRED)
 
+# Problem reports (docs/PRIVACY.md). --send-report posts to this Sentry DSN;
+# without one the build can save and show reports but not send them. Never
+# commit it: scripts/sentry-dsn.sh reads it from FRAMEPASSTHROUGH_SENTRY_DSN or
+# ~/.config/framepassthrough-dev/sentry-dsn.
+set(FPS_SENTRY_DSN "$ENV{FRAMEPASSTHROUGH_SENTRY_DSN}" CACHE STRING "Sentry DSN for --send-report (empty: no sending)")
+option(FPS_RELEASE_BUILD "Report as framepassthrough@<version> in the production environment" OFF)
+if(FPS_RELEASE_BUILD)
+    set(FPS_RELEASE_NAME "framepassthrough@${PROJECT_VERSION}")
+    set(FPS_ENVIRONMENT "production")
+else()
+    set(FPS_COMMIT "")
+    find_package(Git QUIET)
+    if(GIT_FOUND)
+        execute_process(COMMAND "${GIT_EXECUTABLE}" rev-parse --short HEAD
+            WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+            OUTPUT_VARIABLE FPS_COMMIT OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_QUIET)
+    endif()
+    if(FPS_COMMIT STREQUAL "")
+        set(FPS_COMMIT "${PROJECT_VERSION}-dev")
+    endif()
+    set(FPS_RELEASE_NAME "framepassthrough@${FPS_COMMIT}")
+    set(FPS_ENVIRONMENT "development")
+endif()
+configure_file(cmake/build_info.hpp.in "${CMAKE_BINARY_DIR}/generated/build_info.hpp" @ONLY)
+
 # SteamVR-free logic, shared with the unit tests.
-add_library(fps_logic STATIC src/config.cpp src/controller.cpp src/gate.cpp src/passthrough_state.cpp)
+add_library(fps_logic STATIC src/config.cpp src/controller.cpp src/gate.cpp src/passthrough_state.cpp src/report.cpp)
 target_include_directories(fps_logic PUBLIC src third_party/json)
 target_compile_options(fps_logic PRIVATE -Wall -Wextra -Wpedantic)
 
@@ -33,6 +58,7 @@ target_compile_definitions(fps_core PUBLIC FPS_VERSION="${PROJECT_VERSION}")
 
 add_executable(frame-passthrough-shortcuts src/main.cpp)
 target_link_libraries(frame-passthrough-shortcuts PRIVATE fps_core)
+target_include_directories(frame-passthrough-shortcuts PRIVATE "${CMAKE_BINARY_DIR}/generated")
     target_compile_options(fps_core PRIVATE -Wall -Wextra -Wpedantic)
     target_compile_options(frame-passthrough-shortcuts PRIVATE -Wall -Wextra -Wpedantic)
     # Keep the device bundle independent of the compiler's libstdc++ version.

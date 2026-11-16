@@ -50,7 +50,11 @@ The other keys, the command line and the file locations are in [docs/TECHNICAL.m
 
 The README gives this command with the full program path, `~/.local/share/FramePassthrough/app/frame-passthrough-shortcuts`, from the Command line section of TECHNICAL.md.
 
+## Problem reports
+
+A crash or fatal error of the resident app saves a scrubbed `problem-report.txt`; `--send-report` posts it to Sentry only when the user runs it. No telemetry, nothing in the background. Design: [docs/TECHNICAL.md#problem-reports](docs/TECHNICAL.md#problem-reports); what is sent: [docs/PRIVACY.md](docs/PRIVACY.md). Keep PRIVACY.md in step with any change to what a report holds.
+
 ## Build from source
 
-On the Frame: `scripts/make-release.sh`. It builds, runs the tests and writes the release tarball to `dist/`. See [docs/TECHNICAL.md](docs/TECHNICAL.md).
+On the Frame: `scripts/make-release.sh`. It builds, runs the tests and writes the release tarball to `dist/`. See [docs/TECHNICAL.md](docs/TECHNICAL.md). The Sentry DSN comes from `FRAMEPASSTHROUGH_SENTRY_DSN` or `~/.config/framepassthrough-dev/sentry-dsn` (`scripts/sentry-dsn.sh`); never commit it.
 

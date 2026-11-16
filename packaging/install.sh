@@ -137,3 +137,7 @@ if pgrep -x vrserver > /dev/null 2>&1; then
 fi
 say "FramePassthrough $VERSION installed. Double-press either thumbstick to switch translucent / opaque"
 say "and hold one for a second to switch RGB / monochrome, while passthrough is showing."
+if [ -e "$STATE/problem-report.txt" ] || [ -e "$STATE/crash-signal.txt" ]; then
+  say "A problem report from an earlier run is saved. $DEST/$APP_NAME --show-report shows it,"
+  say "--send-report sends it to the developer, --discard-report deletes it. Nothing is sent otherwise."
+fi

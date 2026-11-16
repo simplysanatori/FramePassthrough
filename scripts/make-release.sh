@@ -20,7 +20,9 @@ while [ -e "$HOME/.cache/headset-in-use" ]; do
   sleep 60
 done
 
-cmake -S "$ROOT" -B "$BUILD" -G Ninja -DCMAKE_BUILD_TYPE=Release -DFPS_BUILD_PROBE=OFF > /dev/null
+. "$ROOT/scripts/sentry-dsn.sh"
+cmake -S "$ROOT" -B "$BUILD" -G Ninja -DCMAKE_BUILD_TYPE=Release -DFPS_BUILD_PROBE=OFF \
+  -DFPS_RELEASE_BUILD=ON -DFPS_SENTRY_DSN="$FRAMEPASSTHROUGH_SENTRY_DSN" > /dev/null
 nice -n 10 cmake --build "$BUILD"
 ctest --test-dir "$BUILD" --output-on-failure
 

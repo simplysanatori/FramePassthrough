@@ -63,9 +63,19 @@ More fixes: [docs/TECHNICAL.md](docs/TECHNICAL.md#troubleshooting).
 
 Open an [issue](https://github.com/simplysanatori/FramePassthrough/issues) saying what you did and what happened. Attach `~/.config/frame-passthrough-shortcuts/application.log`. It contains your user name. Read it before sharing.
 
+If the app crashes or stops with an error, it saves a problem report on the Frame. Nothing is sent by itself. With `~/.local/share/FramePassthrough/app/frame-passthrough-shortcuts`:
+
+- `--show-report` shows the report. Your home folder, user name, host name and network addresses are already removed.
+- `--send-report` sends that one report to me, then deletes it.
+- `--discard-report` deletes it unsent.
+- `--report-problem "what happened"` saves a report by hand, for when the gestures just stop working.
+
+What a report holds and where it goes: [docs/PRIVACY.md](docs/PRIVACY.md).
+
 ## More
 
 - [Settings, command line and files](docs/TECHNICAL.md)
+- [Privacy and problem reports](docs/PRIVACY.md)
 - [AGENTS.md](AGENTS.md): for developers and AI agents
 - [Building from source](docs/TECHNICAL.md#building)
 - [Changelog](CHANGELOG.md)

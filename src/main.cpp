@@ -3,6 +3,8 @@
 #include "gate.hpp"
 #include "passthrough_state.hpp"
 #include "openvr_camera_source.hpp"
+#include "report.hpp"
+#include "build_info.hpp"
 #include <openvr.h>
 #include <json.hpp>
 #include <algorithm>
@@ -22,9 +24,12 @@
 #include <thread>
 #include <vector>
 #include <cerrno>
+#include <execinfo.h>
 #include <fcntl.h>
+#include <pwd.h>
 #include <sys/file.h>
 #include <sys/stat.h>
+#include <sys/utsname.h>
 #include <sys/wait.h>
 #include <unistd.h>
 
@@ -153,6 +158,9 @@ void write_file(const fs::path& path, const std::string& contents) {
         throw std::runtime_error("Cannot write " + path.string());
 }
 
+// Another copy holds the lock: expected after a double launch, not a problem to report.
+struct AlreadyRunning : std::runtime_error { using std::runtime_error::runtime_error; };
+
 class InstanceLock {
     int fd_ = -1;
 public:
@@ -162,7 +170,7 @@ public:
         if (fd_ < 0) throw std::runtime_error("Cannot open instance lock");
         if (::flock(fd_, LOCK_EX | LOCK_NB) < 0) {
             ::close(fd_); fd_ = -1;
-            throw std::runtime_error("Shortcuts are already running (or instance lock unavailable). Use --stop before diagnostics or one-shot actions.");
+            throw AlreadyRunning("Shortcuts are already running (or instance lock unavailable). Use --stop before diagnostics or one-shot actions.");
         }
     }
     ~InstanceLock() {
@@ -349,9 +357,225 @@ void save_camera_preference(const fps::Controller& controls) {
     fs::rename(temporary, app_directory() / "camera-preference.json");
 }
 
+// Problem reports (docs/PRIVACY.md). A crash or a fatal error of the resident
+// app saves one scrubbed report; nothing leaves the Frame unless the user
+// runs --send-report for that report.
+int run_process(std::vector<std::string> arguments);
+
+fs::path report_path() { return app_directory() / "problem-report.txt"; }
+fs::path crash_marker_path() { return app_directory() / "crash-signal.txt"; }
+
+fps::ScrubInfo scrub_info() {
+    fps::ScrubInfo info;
+    if (const auto home = std::getenv("HOME"); home && *home) {
+        info.home = home;
+        while (info.home.size() > 1 && info.home.back() == '/') info.home.pop_back();
+    }
+    if (const auto entry = ::getpwuid(::getuid()); entry && entry->pw_name) info.user = entry->pw_name;
+    else if (const auto user = std::getenv("USER")) info.user = user;
+    std::array<char, 256> host{};
+    if (::gethostname(host.data(), host.size() - 1) == 0) info.host = host.data();
+    return info;
+}
+
+std::string system_description() {
+    std::string name = "Linux";
+    std::ifstream release("/etc/os-release");
+    for (std::string line; std::getline(release, line);) {
+        if (line.rfind("PRETTY_NAME=", 0) != 0) continue;
+        name = line.substr(12);
+        name.erase(std::remove(name.begin(), name.end(), '"'), name.end());
+    }
+    struct utsname uts {};
+    if (::uname(&uts) == 0) name += std::string(" (kernel ") + uts.release + ", " + uts.machine + ")";
+    return name;
+}
+
+std::string read_text(const fs::path& path) {
+    std::ifstream stream(path, std::ios::binary);
+    std::ostringstream text;
+    if (stream) text << stream.rdbuf();
+    return text.str();
+}
+
+struct ReportInfo {
+    std::string kind;   // crash, error or manual
+    std::string reason;
+    std::string command;
+    std::string signal;
+    std::string stack;
+    std::string started;
+    std::string version = FPS_VERSION;
+    std::string release = FPS_RELEASE_NAME;
+    ReportInfo(std::string kind_, std::string reason_, std::string command_)
+        : kind(std::move(kind_)), reason(std::move(reason_)), command(std::move(command_)) {}
+};
+
+void save_report(const ReportInfo& info) {
+    auto one_line = info.reason.substr(0, info.reason.find('\n'));
+    std::ostringstream text;
+    text << "FramePassthrough problem report\n"
+         << "Kind: " << info.kind << "\n"
+         << "Reason: " << one_line << "\n";
+    if (!info.signal.empty()) text << "Signal: " << info.signal << "\n";
+    text << "Release: " << info.release << "\n"
+         << "Version: " << info.version << "\n"
+         << "Command: " << info.command << "\n";
+    if (!info.started.empty()) text << "Started: " << info.started << "\n";
+    text << "Saved: " << wall_clock() << "\n"
+         << "System: " << system_description() << "\n\n";
+    if (info.kind == "manual") text << "What happened:\n" << info.reason << "\n\n";
+    if (!info.stack.empty()) text << "Stack:\n" << info.stack << "\n";
+    text << "Last lines of application.log:\n" << fps::tail_lines(read_text(app_directory() / "application.log"), 200) << "\n";
+    const auto temporary = app_directory() / "problem-report.pending.txt";
+    write_file(temporary, fps::scrub(text.str(), scrub_info()));
+    fs::rename(temporary, report_path());
+}
+
+// Turns the raw note the crash handler left into a report.
+void collect_crash_marker() {
+    const auto marker = crash_marker_path();
+    if (!fs::exists(marker)) return;
+    ReportInfo info("crash", "", "--run");
+    int signal = 0;
+    bool in_stack = false;
+    std::istringstream lines(read_text(marker));
+    for (std::string line; std::getline(lines, line);) {
+        if (in_stack) { info.stack += line + "\n"; continue; }
+        const auto eq = line.find('=');
+        if (eq == std::string::npos) continue;
+        const auto key = line.substr(0, eq), value = line.substr(eq + 1);
+        if (key == "version") info.version = value;
+        else if (key == "release") info.release = value;
+        else if (key == "command") info.command = value;
+        else if (key == "started") info.started = value;
+        else if (key == "signal") { signal = std::atoi(value.c_str()); in_stack = true; }
+    }
+    info.signal = fps::signal_name(signal);
+    info.reason = "Crashed with " + info.signal + " (signal " + std::to_string(signal) + ")";
+    save_report(info);
+    fs::remove(marker);
+}
+
+void announce_saved_report() {
+    if (fs::exists(report_path()))
+        log("A problem report is saved in " + report_path().string() + ". --show-report shows it, --send-report sends it "
+            "to the developer, --discard-report deletes it.");
+}
+
+// The crash handler may only use async-signal-safe calls, so everything it
+// writes is prepared here.
+std::array<char, 4096> crash_marker{};
+std::array<char, 512> crash_header{};
+std::size_t crash_header_size = 0;
+std::array<char, 64 * 1024> crash_stack{};
+
+void write_all(int fd, const char* data, std::size_t size) {
+    while (size) {
+        const auto written = ::write(fd, data, size);
+        if (written <= 0) return;
+        data += written;
+        size -= static_cast<std::size_t>(written);
+    }
+}
+
+void on_crash(int signal) {
+    const int fd = ::open(crash_marker.data(), O_CREAT | O_WRONLY | O_TRUNC | O_CLOEXEC, 0600);
+    if (fd >= 0) {
+        write_all(fd, crash_header.data(), crash_header_size);
+        char line[24] = "signal=";
+        std::size_t at = 7;
+        char digits[8];
+        int count = 0;
+        for (int value = signal; count == 0 || value; value /= 10) digits[count++] = static_cast<char>('0' + value % 10);
+        while (count) line[at++] = digits[--count];
+        line[at++] = '\n';
+        write_all(fd, line, at);
+        void* frames[64];
+        ::backtrace_symbols_fd(frames, ::backtrace(frames, 64), fd);
+        ::close(fd);
+    }
+    // SA_RESETHAND put back the default action: end the process as before.
+    ::raise(signal);
+}
+
+void install_crash_handler(const std::string& command) {
+    const auto marker = crash_marker_path().string();
+    if (marker.size() >= crash_marker.size()) return;
+    std::copy(marker.begin(), marker.end(), crash_marker.begin());
+    const auto header = "version=" FPS_VERSION "\nrelease=" FPS_RELEASE_NAME "\ncommand=" + command + "\nstarted=" + wall_clock() + "\n";
+    if (header.size() >= crash_header.size()) return;
+    std::copy(header.begin(), header.end(), crash_header.begin());
+    crash_header_size = header.size();
+    void* warm[1];
+    ::backtrace(warm, 1); // loads the unwinder now rather than inside the handler
+    stack_t alternate{};
+    alternate.ss_sp = crash_stack.data();
+    alternate.ss_size = crash_stack.size();
+    ::sigaltstack(&alternate, nullptr); // so a stack overflow is caught too
+    struct sigaction action {};
+    action.sa_handler = on_crash;
+    action.sa_flags = SA_RESETHAND | SA_ONSTACK;
+    sigemptyset(&action.sa_mask);
+    for (const int signal : {SIGSEGV, SIGBUS, SIGILL, SIGFPE, SIGABRT}) ::sigaction(signal, &action, nullptr);
+}
+
+std::string random_event_id() {
+    std::array<unsigned char, 16> bytes{};
+    std::ifstream random("/dev/urandom", std::ios::binary);
+    if (!random.read(reinterpret_cast<char*>(bytes.data()), bytes.size())) throw std::runtime_error("Cannot read /dev/urandom");
+    bytes[6] = static_cast<unsigned char>((bytes[6] & 0x0f) | 0x40);
+    bytes[8] = static_cast<unsigned char>((bytes[8] & 0x3f) | 0x80);
+    std::string id;
+    for (const auto byte : bytes) {
+        char hex[3];
+        std::snprintf(hex, sizeof(hex), "%02x", byte);
+        id += hex;
+    }
+    return id;
+}
+
+// Posts the saved report to Sentry's envelope endpoint with curl, then
+// deletes it. Only ever runs when the user asks for it.
+void send_report() {
+    collect_crash_marker();
+    if (!fs::exists(report_path())) { log("No problem report is saved."); return; }
+    const std::string dsn_text = FPS_SENTRY_DSN;
+    if (dsn_text.empty())
+        throw std::runtime_error("This build cannot send reports (it was built without a Sentry DSN). Attach " +
+            report_path().string() + " to a GitHub issue instead.");
+    const auto dsn = fps::parse_dsn(dsn_text);
+    if (!dsn) throw std::runtime_error("The Sentry DSN built into this program is not valid");
+    const auto id = random_event_id();
+    const auto envelope = app_directory() / "problem-report.envelope";
+    write_file(envelope, fps::build_envelope(read_text(report_path()), dsn_text, id,
+        static_cast<std::int64_t>(std::time(nullptr)), FPS_VERSION, FPS_ENVIRONMENT));
+    int status = 1;
+    try {
+        status = run_process({"curl", "-sS", "--fail", "--proto", "=https", "--max-time", "30", "-o", "/dev/null",
+            "-H", "Content-Type: application/x-sentry-envelope",
+            "-H", "X-Sentry-Auth: Sentry sentry_version=7, sentry_client=framepassthrough/" FPS_VERSION ", sentry_key=" + dsn->key,
+            "--data-binary", "@" + envelope.string(), dsn->envelope_url()});
+    } catch (...) {
+        std::error_code ignored;
+        fs::remove(envelope, ignored);
+        throw;
+    }
+    std::error_code ignored;
+    fs::remove(envelope, ignored);
+    if (status == 127) throw std::runtime_error("curl is needed to send a report; the report is kept");
+    if (status != 0) throw std::runtime_error("Sending failed (curl exit code " + std::to_string(status) + "); the report is kept, try again later");
+    fs::remove(report_path());
+    log("Report sent (event " + id + "). Thank you.");
+}
+
 int run(const fs::path& binary, const fs::path& assets, const fs::path& config_path, fps::Config config, bool bindings) {
     InstanceLock lock;
+    try { collect_crash_marker(); }
+    catch (const std::exception& error) { std::cerr << "Cannot save the last crash's report: " << error.what() << std::endl; }
     application_log.open(app_directory() / "application.log", std::ios::app);
+    install_crash_handler(bindings ? "--bindings" : "--run");
+    announce_saved_report();
     VrSession session(!bindings, false, true);
     register_app(binary, assets, config_path);
     VrSettings settings;
@@ -784,7 +1008,8 @@ json application_status() {
         } catch (const json::exception&) {}
     }
     return {{"installed", installed}, {"autolaunch", overlay && vr::VRApplications()->GetApplicationAutoLaunch(app_key)},
-        {"running", pid != 0}, {"pid", pid}, {"ready", ready}, {"application_type", overlay ? "overlay" : "background"}, {"renders_overlay", false}};
+        {"running", pid != 0}, {"pid", pid}, {"ready", ready}, {"application_type", overlay ? "overlay" : "background"}, {"renders_overlay", false},
+        {"problem_report_saved", fs::exists(report_path()) || fs::exists(crash_marker_path())}};
 }
 
 void verify_control_companion(const fs::path& binary, const fs::path& helper) {
@@ -821,6 +1046,11 @@ void help() {
         "  --validate            Check config and bundled action manifest without SteamVR\n"
         "  --set disable-while-game-running on|off\n"
         "                        Also disable the gestures while a game runs (default off)\n"
+        "  --show-report         Show the saved problem report, exactly as --send-report sends it\n"
+        "  --send-report         Send the saved problem report to the developer (Sentry), then delete it\n"
+        "  --discard-report      Delete the saved problem report without sending it\n"
+        "  --report-problem TEXT Save a problem report with your description and the log\n"
+        "  --test-crash          Stop with a test error and save a report, to test reporting\n"
         "  --config PATH         Use this JSON config (default: config.json beside executable)\n"
         "  --help                Show this help");
 }
@@ -829,6 +1059,7 @@ void help() {
 int main(int argc, char** argv) {
     std::signal(SIGINT, stop);
     std::signal(SIGTERM, stop);
+    std::string report_command; // set for the commands whose fatal errors are reported
     try {
         const auto process_binary = executable();
         const bool control_process = process_binary.filename() == "frame-passthrough-control";
@@ -859,7 +1090,11 @@ int main(int argc, char** argv) {
                 if (i + 2 >= argc) throw std::runtime_error("--set needs an option and a value, e.g. --set disable-while-game-running on");
                 set_name = argv[++i];
                 set_value = argv[++i];
-            } else if (arg != "--run" && arg != "--install" && arg != "--uninstall" && arg != "--stop" && arg != "--status" && arg != "--doctor" && arg != "--self-test" && arg != "--bindings" && arg != "--validate" && arg != "--set")
+            } else if (arg == "--report-problem") {
+                if (++i == argc || !*argv[i]) throw std::runtime_error("--report-problem needs a description, e.g. --report-problem \"the hold stopped working\"");
+                action = argv[i];
+            } else if (arg != "--run" && arg != "--install" && arg != "--uninstall" && arg != "--stop" && arg != "--status" && arg != "--doctor" && arg != "--self-test" && arg != "--bindings" && arg != "--validate" && arg != "--set" &&
+                       arg != "--show-report" && arg != "--send-report" && arg != "--discard-report" && arg != "--test-crash")
                 throw std::runtime_error("Unknown command: " + arg);
         }
         const bool management = command == "--install" || command == "--uninstall" || command == "--stop" || command == "--status";
@@ -881,6 +1116,36 @@ int main(int argc, char** argv) {
                 throw std::runtime_error("Cannot start frame-passthrough-control companion");
             }
         }
+        if (command == "--show-report") {
+            collect_crash_marker();
+            if (!fs::exists(report_path())) { log("No problem report is saved."); return 0; }
+            std::cout << read_text(report_path());
+            log("\nThis is everything --send-report sends, with the release and the kind of report as Sentry tags. "
+                "Nothing is sent unless you run --send-report.");
+            return 0;
+        }
+        if (command == "--send-report") { send_report(); return 0; }
+        if (command == "--discard-report") {
+            std::error_code error;
+            const bool removed_report = fs::remove(report_path(), error);
+            const bool removed = fs::remove(crash_marker_path(), error) || removed_report;
+            log(removed ? "Problem report deleted." : "No problem report is saved.");
+            return 0;
+        }
+        if (command == "--report-problem") {
+            collect_crash_marker();
+            if (fs::exists(report_path()))
+                throw std::runtime_error("A problem report is already saved. Send it with --send-report or delete it with --discard-report first.");
+            fs::create_directories(app_directory());
+            save_report(ReportInfo{"manual", action, command});
+            log("Saved in " + report_path().string() + ". Read it with --show-report, then send it with --send-report.");
+            return 0;
+        }
+        if (command == "--test-crash") {
+            report_command = command;
+            throw std::runtime_error("Sentry test error " + wall_clock());
+        }
+        if (command == "--run") report_command = command;
         if (command == "--status" || command == "--stop") {
             VrSession session(false, true);
             if (command == "--status") log(application_status().dump());
@@ -1021,9 +1286,21 @@ int main(int argc, char** argv) {
             return 0;
         }
         return run(binary, assets, config_path, config, command == "--bindings");
+    } catch (const AlreadyRunning& e) {
+        std::cerr << "Error: " << e.what() << std::endl;
+        return 1;
     } catch (const std::exception& e) {
         if (stopping) return 0;
         std::cerr << "Error: " << e.what() << std::endl;
+        if (!report_command.empty()) {
+            try {
+                fs::create_directories(app_directory());
+                save_report(ReportInfo{"error", e.what(), report_command});
+                log("Stopped by an error. A problem report was saved: --show-report shows it, --send-report sends it.");
+            } catch (const std::exception& error) {
+                std::cerr << "Cannot save a problem report: " << error.what() << std::endl;
+            }
+        }
         return 1;
     }
 }

@@ -47,16 +47,27 @@ A config file without a key gets its default. An `rgb` block from an older confi
 | `--action NAME` | Run `toggle-style`, `translucent`, `opaque`, `toggle-rgb`, `rgb` or `monochrome` once. Run `--stop` first |
 | `--self-test` | Cycle the passthrough style and put it back. Run `--stop` first |
 | `--validate` | Check `config.json` and the action files without SteamVR |
+| `--show-report` | Print the saved problem report, exactly the file `--send-report` sends |
+| `--send-report` | Send the saved problem report to Sentry with `curl`, then delete it |
+| `--discard-report` | Delete the saved problem report unsent |
+| `--report-problem TEXT` | Save a problem report with your description and the log tail |
+| `--test-crash` | Stop with the error "Sentry test error \<time\>" and save a report, to test reporting |
 | `--config PATH` | Use another config file |
 
 After `--stop` and a one-shot command, run `--install` to start the app again.
+
+## Problem reports
+
+Only the resident app (`--run`) and `--test-crash` save a report on a fatal error; the other commands print their error and stop. A second launch that finds the instance lock taken saves nothing. `--run` installs a handler for SIGSEGV, SIGBUS, SIGILL, SIGFPE and SIGABRT (on an alternate stack) that writes `crash-signal.txt` (version, release, start time, signal and `backtrace_symbols_fd` output) and lets the signal end the process. The next `--run`, `--show-report` or `--send-report` turns it into `problem-report.txt` with the log tail, scrubbed (`src/report.cpp`), and `--run` logs that a report is waiting. `--status` shows `problem_report_saved`. One report is kept; a newer crash or error replaces it, and `--report-problem` refuses while one is saved.
+
+`--send-report` builds a Sentry envelope (`fps::build_envelope`: an event with the reason as an exception, or a `warning` message for `--report-problem`, release `framepassthrough@<version>` from a release build or `framepassthrough@<short commit>` otherwise, environment `production` or `development`, tags `report`, `command`, `system`, `sdk.settings.infer_ip` `never`; and `report.txt` as an attachment) and posts it with `curl --proto =https` to the DSN's envelope endpoint. The stack is code offsets (`binary(+0x...)`); resolve them with `addr2line -e` on the unstripped build of that release. What is sent and when: [PRIVACY.md](PRIVACY.md).
 
 ## Files
 
 | What | Where |
 | --- | --- |
 | Program, `config.json`, bindings | `~/.local/share/FramePassthrough/app` |
-| Camera choice, `application.log`, `runtime.json` (live gate state), `app.vrmanifest`, `launch.json`, `instance.lock` | `~/.config/frame-passthrough-shortcuts` |
+| Camera choice, `application.log`, `runtime.json` (live gate state), `app.vrmanifest`, `launch.json`, `instance.lock`, `problem-report.txt` and `crash-signal.txt` (problem reports) | `~/.config/frame-passthrough-shortcuts` |
 | SteamVR autostart | `~/.config/openvr/config/vrappconfig/local.frame.passthrough.shortcuts.vrappconfig` |
 | SteamVR app list, only when installed with SteamVR closed | `~/.config/openvr/config/appconfig.json` |
 
@@ -81,6 +92,8 @@ The original's folder stays but no longer runs. Do not run the original's `--uni
 ## Building
 
 `scripts/make-release.sh [build-dir]` builds natively on a Linux Arm64 machine with CMake, Ninja, a C++17 compiler and `strip`. It waits while `~/.cache/headset-in-use` exists, runs the unit tests, refuses a binary that needs a glibc newer than `MAX_GLIBC` (default 2.38), and writes `dist/framepassthrough-<version>-linux-arm64.tar.gz` and its `.sha256`. The OpenVR loader and libstdc++ are linked statically; the binary needs only glibc.
+
+The Sentry DSN for `--send-report` is the CMake cache variable `FPS_SENTRY_DSN` (default: the `FRAMEPASSTHROUGH_SENTRY_DSN` environment variable at configure time), written into the generated `build/generated/build_info.hpp`, never into the repository. `make-release.sh` sources `scripts/sentry-dsn.sh`, which takes it from `FRAMEPASSTHROUGH_SENTRY_DSN` or the one-line file `~/.config/framepassthrough-dev/sentry-dsn` (or `FRAMEPASSTHROUGH_SENTRY_DSN_FILE`) and prints only whether one was found. Without one the build saves and shows reports but cannot send them. `make-release.sh` also sets `-DFPS_RELEASE_BUILD=ON`, so reports name the release `framepassthrough@<version>`; other builds use the commit they were configured at.
 
 A plain build:
 
