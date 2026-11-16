@@ -12,24 +12,24 @@ Passthrough shortcuts on the Steam Frame's thumbsticks. A fork of KominoVR's [Fr
 
 ## How it works
 
-It runs on the Frame itself, in the background, and starts with SteamVR. It listens for your thumbstick clicks through SteamVR. Then it asks SteamVR to switch the passthrough style or camera.
+It runs in the background on the Frame and starts with SteamVR. It reads your thumbstick clicks and asks SteamVR to switch the passthrough style or camera.
 
 ## Requirements
 
 - A Steam Frame with SteamVR, run at least once
-- The Arcturus RGB camera, for the colour camera (double-press works without it)
+- For the colour camera only: the Arcturus RGB camera
 
 ## Install
 
 1. Download `framepassthrough-0.2.0-linux-arm64.tar.gz` from [Releases](https://github.com/simplysanatori/FramePassthrough/releases).
-2. Unpack and install it:
+2. Unpack and install it from the download folder:
 
    ```sh
-   mkdir fp && tar -xzf framepassthrough-0.2.0-linux-arm64.tar.gz -C fp
+   mkdir -p fp && tar -xzf framepassthrough-0.2.0-linux-arm64.tar.gz -C fp
    ./fp/install.sh
    ```
 
-With [Frametanium](https://github.com/Cogential/frametanium): add `simplysanatori/FramePassthrough`. It also updates the app.
+With [Frametanium](https://github.com/Cogential/frametanium): add `simplysanatori/FramePassthrough`.
 
 Have the original? Install over it, then remove its Steam library entry.
 
@@ -44,6 +44,10 @@ With passthrough showing (side button or Steam button) and the dashboard closed,
 
 Remap them in **SteamVR controller bindings → Frame Passthrough Shortcuts**.
 
+## Update
+
+Repeat the install steps with the new release. Frametanium updates it for you.
+
 ## Uninstall
 
 ```sh
@@ -54,39 +58,38 @@ Remap them in **SteamVR controller bindings → Frame Passthrough Shortcuts**.
 
 - Gestures do nothing: open passthrough and close the SteamVR dashboard.
 - Still nothing: choose the **Frame Passthrough Shortcuts** binding in SteamVR controller bindings.
-- Gestures act in games with passthrough open: run `~/.local/share/FramePassthrough/app/frame-passthrough-shortcuts --set disable-while-game-running on`.
-- Hold does nothing: you need the Arcturus RGB camera.
+- To turn the gestures off in games: run `~/.local/share/FramePassthrough/app/frame-passthrough-shortcuts --set disable-while-game-running on`.
 
 More fixes: [docs/TECHNICAL.md](docs/TECHNICAL.md#troubleshooting).
 
 ## Reporting a problem
 
-Open an [issue](https://github.com/simplysanatori/FramePassthrough/issues) saying what you did and what happened. Attach `~/.config/frame-passthrough-shortcuts/application.log`. It contains your user name. Read it before sharing.
+Open an [issue](https://github.com/simplysanatori/FramePassthrough/issues) saying what you did and what happened. Attach `~/.config/frame-passthrough-shortcuts/application.log`. It contains your user name, so read it before sharing.
 
 ## More
 
-- [Settings, command line and files](docs/TECHNICAL.md)
+- [docs/TECHNICAL.md](docs/TECHNICAL.md): settings, command line, files and [building](docs/TECHNICAL.md#building)
 - [AGENTS.md](AGENTS.md): for developers and AI agents
-- [Building from source](docs/TECHNICAL.md#building)
 - [Changelog](CHANGELOG.md)
 
 ## Support
 
-Support KominoVR's [Frame Passthrough Shortcuts](https://github.com/KominoVR/frame-passthrough-shortcuts) first: star and follow it, report bugs there, send improvements upstream.
+Star KominoVR's [original](https://github.com/KominoVR/frame-passthrough-shortcuts) and send improvements upstream.
 
-For more Steam Frame ports, you can [buy me a coffee](https://ko-fi.com/sana748653).
+For more Steam Frame ports, [buy me a coffee](https://ko-fi.com/sana748653).
 
 ## Credits
 
 - [Frame Passthrough Shortcuts](https://github.com/KominoVR/frame-passthrough-shortcuts) by [KominoVR](https://github.com/KominoVR): the original app
-- Fork by [simplysanatori](https://github.com/simplysanatori)
-- Valve's [OpenVR SDK](https://github.com/ValveSoftware/openvr) and Niels Lohmann's [JSON for Modern C++](https://github.com/nlohmann/json); full list in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)
+- [simplysanatori](https://github.com/simplysanatori): this fork
+- [OpenVR SDK](https://github.com/ValveSoftware/openvr) by Valve: talks to SteamVR
+- [JSON for Modern C++](https://github.com/nlohmann/json) by Niels Lohmann: JSON parsing
 
-Unofficial, not affiliated with Valve or the upstream author.
+Unofficial, not affiliated with Valve or KominoVR.
 
 ## Licence
 
-MIT, same as upstream. See [LICENSE](LICENSE).
+MIT, same as upstream: [LICENSE](LICENSE). Bundled libraries: [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
 ## How this was made
 

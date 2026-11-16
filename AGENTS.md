@@ -31,6 +31,8 @@ If you have the original, install over it. Your camera choice, bindings and auto
 
 To remove: `~/.local/share/FramePassthrough/app/uninstall.sh`.
 
+`install.sh` updates in place, so the README's Update section is just the install steps again with the new tarball. The README unpacks with `mkdir -p fp` rather than `mkdir fp`: on a second run `mkdir fp` fails and the `&&` skips the unpack, so `./fp/install.sh` would reinstall the old version.
+
 ## Controls
 
 Whenever passthrough is showing (side button or Steam button), in Home or in a game, with the dashboard closed, on either thumbstick:
